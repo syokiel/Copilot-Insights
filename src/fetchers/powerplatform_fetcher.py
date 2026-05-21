@@ -40,15 +40,23 @@ class PowerPlatformFetcher:
         }
 
     # ------------------------------------------------------------------
-    # Bots (Dataverse)
+    # Bots (Dataverse) — single env or all environments
     # ------------------------------------------------------------------
 
-    def fetch_bots(self) -> list[dict]:
-        """Return all Copilot Studio bots from Dataverse."""
-        url = f"{self._dataverse_url}/api/data/v9.2/bots"
+    def fetch_bots_from(self, dataverse_url: str, environment_id: str) -> list[dict]:
+        """Fetch bots from a specific Dataverse org URL."""
+        dv_url = dataverse_url.rstrip("/")
+        scope = f"{dv_url}/.default"
+        token = self._credential.get_token(scope).token
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "OData-MaxVersion": "4.0",
+            "OData-Version": "4.0",
+            "Accept": "application/json",
+        }
         resp = requests.get(
-            url,
-            headers=self._headers(),
+            f"{dv_url}/api/data/v9.2/bots",
+            headers=headers,
             params={"$select": "botid,name,schemaname,createdon,modifiedon,publishedon"},
             timeout=30,
         )
@@ -58,13 +66,17 @@ class PowerPlatformFetcher:
                 "id": b.get("botid", ""),
                 "name": b.get("name", ""),
                 "schemaName": b.get("schemaname", ""),
-                "environmentId": self._environment_id,
+                "environmentId": environment_id,
                 "createdDateTime": b.get("createdon", ""),
                 "modifiedDateTime": b.get("modifiedon", ""),
                 "publishedDateTime": b.get("publishedon", ""),
             }
             for b in resp.json().get("value", [])
         ]
+
+    def fetch_bots(self) -> list[dict]:
+        """Fetch bots from the configured Dataverse URL (single-environment convenience wrapper)."""
+        return self.fetch_bots_from(self._dataverse_url, self._environment_id)
 
     # ------------------------------------------------------------------
     # Environments (Power Platform Admin API)
@@ -145,6 +157,56 @@ class PowerPlatformFetcher:
             }
             for p in resp.json().get("value", [])
         ]
+
+    # ------------------------------------------------------------------
+    # Solutions (Dataverse)
+    # ------------------------------------------------------------------
+
+    def fetch_bot_solutions_from(self, dataverse_url: str) -> list[dict]:
+        """
+        Return solution membership for bots in a specific Dataverse org.
+        componenttype 380 = Chatbot in Power Platform.
+        Returns empty list if the component type doesn't exist or access is denied.
+        """
+        dv_url = dataverse_url.rstrip("/")
+        scope = f"{dv_url}/.default"
+        token = self._credential.get_token(scope).token
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "OData-MaxVersion": "4.0",
+            "OData-Version": "4.0",
+            "Accept": "application/json",
+        }
+        try:
+            resp = requests.get(
+                f"{dv_url}/api/data/v9.2/solutioncomponents",
+                headers=headers,
+                params={
+                    "$filter": "componenttype eq 380",
+                    "$select": "objectid,_solutionid_value",
+                    "$expand": "solutionid($select=uniquename,friendlyname,version,ismanaged)",
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            out = []
+            for sc in resp.json().get("value", []):
+                sol = sc.get("solutionid") or {}
+                out.append({
+                    "bot_id": sc.get("objectid", ""),
+                    "solution_id": sc.get("_solutionid_value", ""),
+                    "solution_name": sol.get("friendlyname", ""),
+                    "solution_unique": sol.get("uniquename", ""),
+                    "version": sol.get("version", ""),
+                    "is_managed": sol.get("ismanaged", False),
+                })
+            return out
+        except Exception:
+            return []
+
+    def fetch_bot_solutions(self) -> list[dict]:
+        """Fetch bot solutions from the configured Dataverse URL (single-environment wrapper)."""
+        return self.fetch_bot_solutions_from(self._dataverse_url)
 
     # ------------------------------------------------------------------
     # DLP Policies (Power Platform Admin API)

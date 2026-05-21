@@ -1,5 +1,6 @@
 azure-identity>=1.15.0
 azure-monitor-query>=1.2.0
+azure-mgmt-resourcegraph>=8.0.0
 azure-storage-blob>=12.19.0
 msgraph-sdk>=1.0.0
 requests>=2.31.0

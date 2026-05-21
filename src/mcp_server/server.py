@@ -80,6 +80,36 @@ CREATE TABLE IF NOT EXISTS pva_bots (
     bot_id TEXT PRIMARY KEY, display_name TEXT, schema_name TEXT, environment_id TEXT,
     created_at TEXT, modified_at TEXT, published_at TEXT, properties TEXT
 );
+CREATE TABLE IF NOT EXISTS pva_environments (
+    environment_id TEXT PRIMARY KEY, display_name TEXT, type TEXT, region TEXT,
+    state TEXT, created_at TEXT, modified_at TEXT, sku TEXT, dataverse_url TEXT
+);
+CREATE TABLE IF NOT EXISTS pva_publishers (
+    publisher_id TEXT PRIMARY KEY, display_name TEXT, unique_name TEXT,
+    email TEXT, phone TEXT, custom_prefix TEXT, solution_count INTEGER
+);
+CREATE TABLE IF NOT EXISTS pva_dlp_policies (
+    policy_id TEXT PRIMARY KEY, display_name TEXT, environment_type TEXT,
+    created_by TEXT, created_at TEXT, modified_at TEXT, enforcement_mode TEXT,
+    blocked_connectors TEXT, business_connectors TEXT, non_business_connectors TEXT
+);
+CREATE TABLE IF NOT EXISTS pva_bot_solutions (
+    bot_id TEXT PRIMARY KEY, solution_id TEXT, solution_name TEXT,
+    solution_unique TEXT, version TEXT, is_managed INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS az_dependency_failures (
+    row_id TEXT PRIMARY KEY, operation_id TEXT, agent_id TEXT, agent_name TEXT,
+    env_id TEXT, conversation_id TEXT, dependency_name TEXT, result_code TEXT,
+    success INTEGER, duration_ms REAL, timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS az_exceptions (
+    row_id TEXT PRIMARY KEY, operation_id TEXT, agent_id TEXT, conversation_id TEXT,
+    exception_type TEXT, exception_message TEXT, timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS az_alerts (
+    alert_id TEXT PRIMARY KEY, agent_id TEXT, alert_name TEXT,
+    severity TEXT, fired_time TEXT, resource_id TEXT
+);
 """
 
 def _db() -> sqlite3.Connection:
@@ -156,16 +186,90 @@ Copilot Studio / Power Virtual Agents bots registered in the Power Platform envi
 - bot_id: GUID of the bot
 - display_name: Human-readable bot name (use this when reporting agent names)
 - schema_name: Internal schema identifier
-- environment_id: Power Platform environment GUID
+- environment_id: Power Platform environment GUID (join to pva_environments)
 - created_at, modified_at, published_at: ISO timestamps
+
+### pva_environments
+Power Platform environments where agents are deployed.
+- environment_id: GUID — joins to pva_bots.environment_id
+- display_name: Human-readable environment name
+- type / sku: e.g. Sandbox, Production, Default
+- region: Azure region
+- state: Ready / Disabled
+- dataverse_url: Dataverse org URL for this environment
+
+### pva_bot_solutions
+Solution each bot/agent is packaged in (from Dataverse solutioncomponents).
+- bot_id: joins to pva_bots.bot_id
+- solution_name: Human-readable solution name
+- solution_unique: Internal unique name (e.g. "WorkIQAgents")
+- version: solution version string
+- is_managed: 1 = managed/deployed, 0 = unmanaged/in development
+
+### pva_publishers
+Solution publishers registered in the Power Platform environment.
+- publisher_id, display_name, unique_name, custom_prefix
+
+### pva_dlp_policies
+Data Loss Prevention policies governing which connectors agents can use.
+- display_name: Policy name
+- environment_type: AllEnvironments | OnlyEnvironments | ExceptEnvironments
+- blocked_connectors: comma-separated blocked connector names
+- business_connectors: connectors in the Business data group
+- non_business_connectors: connectors in the Non-business group
+NOTE: Requires Power Platform Admin role to sync — may be empty.
+
+### az_dependency_failures
+Failed connector/API calls captured by Azure Monitor Application Insights.
+- operation_id: App Insights operation correlation ID
+- agent_id, agent_name, env_id: from gen_ai.* properties
+- conversation_id: join key back to conversation_events
+- dependency_name: name of the failed dependency/connector
+- result_code: HTTP or error code
+- duration_ms: call duration
+- timestamp: when the failure occurred
+
+### az_exceptions
+Exceptions logged by the agent runtime in Application Insights.
+- operation_id: App Insights operation correlation ID
+- agent_id: from gen_ai.agent.id property
+- conversation_id: join key back to conversation_events
+- exception_type: exception class name
+- exception_message: exception detail message
+- timestamp: when the exception was logged
+
+### az_alerts
+Azure Monitor alerts that fired against agent resources.
+- alert_id: Azure resource ID of the alert instance
+- agent_id: from gen_ai.agent.id tag on the resource
+- alert_name: alert rule name
+- severity: Sev0–Sev4
+- fired_time: when the alert fired
+- resource_id: Azure resource that triggered the alert
 
 ## Key relationships
 conversation_events.conversation_id = connector_calls.conversation_id
+conversation_events.conversation_id = az_dependency_failures.conversation_id
+conversation_events.conversation_id = az_exceptions.conversation_id
+pva_bots.environment_id = pva_environments.environment_id
+pva_bots.bot_id = pva_bot_solutions.bot_id
+pva_bots.bot_id = az_dependency_failures.agent_id (approximate — depends on agent config)
+
+## Cross-reference pattern
+To find conversations with both OTel failures AND Azure Monitor signals:
+  SELECT e.conversation_id, d.dependency_name, d.result_code, ex.exception_type
+  FROM conversation_events e
+  JOIN connector_calls c ON c.conversation_id = e.conversation_id AND c.success = 0
+  LEFT JOIN az_dependency_failures d ON d.conversation_id = e.conversation_id
+  LEFT JOIN az_exceptions ex ON ex.conversation_id = e.conversation_id
+  WHERE d.row_id IS NOT NULL OR ex.row_id IS NOT NULL
+  GROUP BY e.conversation_id
 
 ## Notes
 - Filter design_mode = 0 for production traffic only
 - user_id is an Azure AD object ID (Graph API lookup needed for email)
 - There is NO agent_name column in conversation_events or connector_calls — use pva_bots for agent names
+- az_* tables will be empty until agents are configured to write to Application Insights
 """
 
 
@@ -240,6 +344,20 @@ async def list_tools() -> ListToolsResult:
             },
         ),
         Tool(
+            name="get_user_prompts",
+            description="List user prompts (messages sent to agents). Supports keyword search, conversation filter, and design_mode filter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {"type": "string", "description": "Keyword to search within prompt text (case-insensitive)"},
+                    "conversation_id": {"type": "string", "description": "Return prompts from a single conversation"},
+                    "design_mode": {"type": "boolean", "description": "True = test traffic only, False = production only"},
+                    "limit": {"type": "integer", "default": 50},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="get_top_connectors",
             description="Connectors ranked by usage count with success/failure breakdown and average latency.",
             inputSchema={
@@ -276,7 +394,12 @@ async def list_tools() -> ListToolsResult:
         ),
         Tool(
             name="get_agents",
-            description="List all Copilot Studio agents (bots) registered in the Power Platform environment, with their display names and publish dates.",
+            description="List all Copilot Studio agents with display name, environment, solution, and publish status.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        Tool(
+            name="get_environments",
+            description="List Power Platform environments with their agents and applicable DLP policies.",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
     ])
@@ -297,11 +420,13 @@ def _dispatch(name: str, args: dict) -> object:
         if name == "get_summary_stats":     return _get_summary_stats(conn)
         if name == "get_conversations":     return _get_conversations(conn, args)
         if name == "get_conversation_detail": return _get_conversation_detail(conn, args["conversation_id"])
+        if name == "get_user_prompts":      return _get_user_prompts(conn, args)
         if name == "get_connector_calls":   return _get_connector_calls(conn, args)
         if name == "get_top_connectors":    return _get_top_connectors(conn, args)
         if name == "search_by_user":        return _search_by_user(conn, args)
         if name == "run_sql":               return _run_sql(conn, args["query"])
         if name == "get_agents":            return _get_agents(conn)
+        if name == "get_environments":      return _get_environments(conn)
         raise ValueError(f"Unknown tool: {name}")
     finally:
         conn.close()
@@ -363,6 +488,28 @@ def _get_conversation_detail(conn: sqlite3.Connection, conversation_id: str) -> 
     }
 
 
+def _get_user_prompts(conn: sqlite3.Connection, args: dict) -> list[dict]:
+    limit = int(args.get("limit", 50))
+    filters = ["event_name = 'BotMessageReceived'", "text != ''", "text IS NOT NULL"]
+    params: list = []
+    if "search" in args:
+        filters.append("text LIKE ?")
+        params.append(f"%{args['search']}%")
+    if "conversation_id" in args:
+        filters.append("conversation_id = ?")
+        params.append(args["conversation_id"])
+    if "design_mode" in args:
+        filters.append("design_mode = ?")
+        params.append(1 if args["design_mode"] else 0)
+    where = f"WHERE {' AND '.join(filters)}"
+    return _rows(conn, f"""
+        SELECT timestamp, conversation_id, user_id, channel_id, design_mode, text
+        FROM conversation_events
+        {where}
+        ORDER BY timestamp DESC LIMIT ?
+    """, (*params, limit))
+
+
 def _get_connector_calls(conn: sqlite3.Connection, args: dict) -> list[dict]:
     limit = int(args.get("limit", 50))
     filters, params = [], []
@@ -406,7 +553,46 @@ def _run_sql(conn: sqlite3.Connection, query: str) -> list[dict]:
 
 
 def _get_agents(conn: sqlite3.Connection) -> list[dict]:
-    return _rows(conn, "SELECT bot_id, display_name, schema_name, created_at, modified_at, published_at FROM pva_bots ORDER BY display_name")
+    return _rows(conn, """
+        SELECT
+            b.bot_id,
+            b.display_name,
+            b.environment_id,
+            e.display_name   AS environment_name,
+            e.type           AS environment_type,
+            b.created_at,
+            b.modified_at,
+            b.published_at,
+            s.solution_name,
+            s.solution_unique,
+            s.version        AS solution_version,
+            s.is_managed
+        FROM pva_bots b
+        LEFT JOIN pva_environments e ON e.environment_id = b.environment_id
+        LEFT JOIN pva_bot_solutions s ON s.bot_id = b.bot_id
+        ORDER BY b.display_name
+    """)
+
+
+def _get_environments(conn: sqlite3.Connection) -> list[dict]:
+    envs = _rows(conn, "SELECT * FROM pva_environments ORDER BY display_name")
+    agents_by_env = {}
+    for r in _rows(conn, "SELECT environment_id, display_name FROM pva_bots"):
+        agents_by_env.setdefault(r["environment_id"], []).append(r["display_name"])
+
+    dlp_all = _rows(conn, "SELECT display_name, environment_type, blocked_connectors, business_connectors, non_business_connectors FROM pva_dlp_policies")
+    policies_all_envs = [p for p in dlp_all if p["environment_type"] == "AllEnvironments"]
+
+    result = []
+    for env in envs:
+        eid = env["environment_id"]
+        policies_specific = [p for p in dlp_all if p["environment_type"] == "OnlyEnvironments"]
+        result.append({
+            **env,
+            "agents": agents_by_env.get(eid, []),
+            "dlp_policies": policies_all_envs + policies_specific,
+        })
+    return result
 
 
 # ---------------------------------------------------------------------------

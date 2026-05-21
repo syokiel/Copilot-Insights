@@ -92,10 +92,55 @@ CREATE TABLE IF NOT EXISTS pva_dlp_policies (
     non_business_connectors TEXT
 );
 
+CREATE TABLE IF NOT EXISTS pva_bot_solutions (
+    bot_id          TEXT PRIMARY KEY,
+    solution_id     TEXT,
+    solution_name   TEXT,
+    solution_unique TEXT,
+    version         TEXT,
+    is_managed      INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS az_dependency_failures (
+    row_id          TEXT PRIMARY KEY,
+    operation_id    TEXT,
+    agent_id        TEXT,
+    agent_name      TEXT,
+    env_id          TEXT,
+    conversation_id TEXT,
+    dependency_name TEXT,
+    result_code     TEXT,
+    success         INTEGER,
+    duration_ms     REAL,
+    timestamp       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS az_exceptions (
+    row_id           TEXT PRIMARY KEY,
+    operation_id     TEXT,
+    agent_id         TEXT,
+    conversation_id  TEXT,
+    exception_type   TEXT,
+    exception_message TEXT,
+    timestamp        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS az_alerts (
+    alert_id    TEXT PRIMARY KEY,
+    agent_id    TEXT,
+    alert_name  TEXT,
+    severity    TEXT,
+    fired_time  TEXT,
+    resource_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_sol      ON pva_bot_solutions(solution_id);
 CREATE INDEX IF NOT EXISTS idx_events_conv  ON conversation_events(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_events_run   ON conversation_events(run_id);
 CREATE INDEX IF NOT EXISTS idx_calls_conv   ON connector_calls(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_calls_run    ON connector_calls(run_id);
+CREATE INDEX IF NOT EXISTS idx_az_dep_conv  ON az_dependency_failures(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_az_exc_conv  ON az_exceptions(conversation_id);
 """
 
 
@@ -290,6 +335,22 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
+    def upsert_bot_solutions(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    "INSERT OR REPLACE INTO pva_bot_solutions VALUES (?,?,?,?,?,?)",
+                    (r["bot_id"], r["solution_id"], r["solution_name"],
+                     r["solution_unique"], r["version"], 1 if r.get("is_managed") else 0),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_bot_solutions(self) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM pva_bot_solutions ORDER BY solution_name").fetchall()
+        return [dict(r) for r in rows]
+
     def fetch_environments(self) -> list[dict]:
         rows = self._conn.execute("SELECT * FROM pva_environments ORDER BY display_name").fetchall()
         return [dict(r) for r in rows]
@@ -305,6 +366,70 @@ class SqliteStore:
     def fetch_bots(self) -> list[dict]:
         rows = self._conn.execute(
             "SELECT bot_id, display_name, schema_name, environment_id, created_at, modified_at, published_at FROM pva_bots ORDER BY display_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Azure Monitor tables
+    # ------------------------------------------------------------------
+
+    def upsert_az_dependency_failures(self, rows: list[dict]) -> int:
+        from src.fetchers.azure_monitor_fetcher import dep_row_id
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    "INSERT OR IGNORE INTO az_dependency_failures VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (dep_row_id(r), r.get("OperationId", ""), r.get("AgentId", ""),
+                     r.get("AgentName", ""), r.get("EnvId", ""), r.get("ConversationId", ""),
+                     r.get("DependencyName", ""), r.get("ResultCode", ""),
+                     0,  # success = false (we only store failures)
+                     r.get("DurationMs"), str(r.get("Timestamp", ""))),
+                )
+                written += cur.rowcount
+        return written
+
+    def upsert_az_exceptions(self, rows: list[dict]) -> int:
+        from src.fetchers.azure_monitor_fetcher import exc_row_id
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    "INSERT OR IGNORE INTO az_exceptions VALUES (?,?,?,?,?,?,?)",
+                    (exc_row_id(r), r.get("OperationId", ""), r.get("AgentId", ""),
+                     r.get("ConversationId", ""), r.get("ExceptionType", ""),
+                     r.get("ExceptionMessage", ""), str(r.get("Timestamp", ""))),
+                )
+                written += cur.rowcount
+        return written
+
+    def upsert_az_alerts(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    "INSERT OR REPLACE INTO az_alerts VALUES (?,?,?,?,?,?)",
+                    (r.get("alert_id", ""), r.get("agent_id", ""), r.get("alert_name", ""),
+                     r.get("severity", ""), r.get("fired_time", ""), r.get("resource_id", "")),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_az_dependency_failures(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM az_dependency_failures ORDER BY timestamp DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def fetch_az_exceptions(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM az_exceptions ORDER BY timestamp DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def fetch_az_alerts(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM az_alerts ORDER BY fired_time DESC"
         ).fetchall()
         return [dict(r) for r in rows]
 

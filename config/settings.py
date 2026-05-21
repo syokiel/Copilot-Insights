@@ -42,6 +42,9 @@ class Settings:
     azure_storage_account: str = ""
     azure_storage_container: str = "telemetry-data"
     azure_storage_db_blob: str = "agent_telemetry.db"
+    # Azure Monitor (optional — cross-reference sheet)
+    azure_monitor_workspace_id: str = ""
+    azure_monitor_subscription_id: str = ""
     # Power Platform / Dataverse
     dataverse_url: str = ""
     powerplatform_environment_id: str = ""
@@ -64,6 +67,8 @@ class Settings:
         self.azure_storage_account = os.getenv("AZURE_STORAGE_ACCOUNT", self.azure_storage_account)
         self.azure_storage_container = os.getenv("AZURE_STORAGE_CONTAINER", self.azure_storage_container)
         self.azure_storage_db_blob = os.getenv("AZURE_STORAGE_DB_BLOB", self.azure_storage_db_blob)
+        self.azure_monitor_workspace_id = os.getenv("AZURE_MONITOR_WORKSPACE_ID", self.azure_monitor_workspace_id)
+        self.azure_monitor_subscription_id = os.getenv("AZURE_MONITOR_SUBSCRIPTION_ID", self.azure_monitor_subscription_id)
         self.dataverse_url = os.getenv("DATAVERSE_URL", self.dataverse_url)
         self.powerplatform_environment_id = os.getenv("POWERPLATFORM_ENVIRONMENT_ID", self.powerplatform_environment_id)
         self.mcp_tenant_id = os.getenv("MCP_TENANT_ID", self.mcp_tenant_id)
