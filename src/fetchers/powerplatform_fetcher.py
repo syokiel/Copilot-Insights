@@ -4,6 +4,14 @@ from azure.identity import ClientSecretCredential
 _PP_API_BASE = "https://api.powerplatform.com"
 _PP_SCOPE = "https://api.powerplatform.com/.default"
 
+# BAP endpoint — used by configure_agent_telemetry.py; returns all tenant environments
+_BAP_BASE = "https://api.bap.microsoft.com"
+_BAP_SCOPE = "https://api.bap.microsoft.com/.default"
+
+# Dynamics 365 Global Discovery — returns Dataverse orgs the SP has been granted access to
+_DISCO_BASE = "https://globaldisco.crm.dynamics.com"
+_DISCO_SCOPE = "https://globaldisco.crm.dynamics.com/.default"
+
 
 class PowerPlatformFetcher:
     def __init__(
@@ -38,6 +46,14 @@ class PowerPlatformFetcher:
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+
+    def _bap_headers(self) -> dict:
+        token = self._credential.get_token(_BAP_SCOPE).token
+        return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    def _disco_headers(self) -> dict:
+        token = self._credential.get_token(_DISCO_SCOPE).token
+        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     # ------------------------------------------------------------------
     # Bots (Dataverse) — single env or all environments
@@ -83,20 +99,27 @@ class PowerPlatformFetcher:
     # ------------------------------------------------------------------
 
     def fetch_environments(self) -> list[dict]:
-        """Return Power Platform environments. Falls back to config-derived record if API unavailable."""
+        """
+        Return ALL Power Platform environments in the tenant.
+
+        Discovery order (first success wins):
+          1. BAP Admin API  — full tenant view; requires Power Platform Administrator role
+          2. Global Discovery — Dataverse orgs the SP has been explicitly granted access to
+          3. Config fallback  — the single env in DATAVERSE_URL / POWERPLATFORM_ENVIRONMENT_ID
+        """
+        # ── 1. BAP Admin API (full tenant) ──────────────────────────────────────
         try:
-            url = f"{_PP_API_BASE}/appmanagement/environments"
             resp = requests.get(
-                url,
-                headers=self._pp_headers(),
-                params={"api-version": "2022-03-01-preview"},
+                f"{_BAP_BASE}/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments",
+                headers=self._bap_headers(),
+                params={"api-version": "2021-04-01"},
                 timeout=30,
             )
             resp.raise_for_status()
             out = []
             for e in resp.json().get("value", []):
                 props = e.get("properties", {})
-                linked = props.get("linkedEnvironmentMetadata", {}) or {}
+                linked = props.get("linkedEnvironmentMetadata") or {}
                 out.append({
                     "environment_id": e.get("name", ""),
                     "display_name": props.get("displayName", ""),
@@ -106,13 +129,40 @@ class PowerPlatformFetcher:
                     "created_at": props.get("createdTime", ""),
                     "modified_at": props.get("modifiedTime", ""),
                     "sku": props.get("environmentSku", ""),
-                    "dataverse_url": linked.get("instanceUrl", ""),
+                    "dataverse_url": linked.get("instanceUrl", "").rstrip("/"),
                 })
-            return out
+            if out:
+                return out
         except Exception:
             pass
 
-        # Fallback: construct from known config values
+        # ── 2. Global Discovery (orgs the SP has Dataverse access to) ───────────
+        try:
+            resp = requests.get(
+                f"{_DISCO_BASE}/api/discovery/v2.0/Instances",
+                headers=self._disco_headers(),
+                timeout=30,
+            )
+            resp.raise_for_status()
+            out = []
+            for inst in resp.json().get("value", []):
+                out.append({
+                    "environment_id": inst.get("EnvironmentId", ""),
+                    "display_name": inst.get("FriendlyName", ""),
+                    "type": inst.get("EnvironmentSku", ""),
+                    "region": inst.get("DatacenterRegion", ""),
+                    "state": "Ready",
+                    "created_at": "",
+                    "modified_at": "",
+                    "sku": inst.get("EnvironmentSku", ""),
+                    "dataverse_url": inst.get("Url", "").rstrip("/"),
+                })
+            if out:
+                return out
+        except Exception:
+            pass
+
+        # ── 3. Config fallback (single env) ─────────────────────────────────────
         if self._environment_id:
             return [{
                 "environment_id": self._environment_id,
@@ -214,10 +264,10 @@ class PowerPlatformFetcher:
 
     def fetch_dlp_policies(self) -> list[dict]:
         """Return tenant-level DLP policies. Requires Power Platform Admin role on the SP."""
-        url = f"{_PP_API_BASE}/powerapps/tenants/{self._tenant_id}/apiPolicies"
+        url = f"{_BAP_BASE}/providers/Microsoft.BusinessAppPlatform/scopes/admin/apiPolicies"
         resp = requests.get(
             url,
-            headers=self._pp_headers(),
+            headers=self._bap_headers(),
             params={"api-version": "2016-11-01-preview"},
             timeout=30,
         )

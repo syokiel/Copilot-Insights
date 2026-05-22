@@ -10,3 +10,6 @@ mcp>=1.0.0
 PyJWT[crypto]>=2.8.0
 uvicorn>=0.29.0
 starlette>=0.37.0
+openai>=1.30.0
+botbuilder-core>=4.14.0
+botbuilder-integration-aiohttp>=4.14.0

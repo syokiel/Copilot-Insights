@@ -134,6 +134,36 @@ CREATE TABLE IF NOT EXISTS az_alerts (
     resource_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS m365_copilot_usage (
+    user_principal_name TEXT PRIMARY KEY,
+    display_name        TEXT,
+    last_activity_date  TEXT,
+    teams_chats         INTEGER,
+    teams_meetings      INTEGER,
+    word                INTEGER,
+    excel               INTEGER,
+    powerpoint          INTEGER,
+    outlook             INTEGER,
+    onenote             INTEGER,
+    loop                INTEGER,
+    copilot_chat        INTEGER,
+    report_refresh_date TEXT,
+    report_period       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS teams_usage (
+    user_principal_name   TEXT PRIMARY KEY,
+    last_activity_date    TEXT,
+    team_chat_messages    INTEGER,
+    private_chat_messages INTEGER,
+    calls                 INTEGER,
+    meetings              INTEGER,
+    meetings_organized    INTEGER,
+    meetings_attended     INTEGER,
+    report_refresh_date   TEXT,
+    report_period         TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_bot_sol      ON pva_bot_solutions(solution_id);
 CREATE INDEX IF NOT EXISTS idx_events_conv  ON conversation_events(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_events_run   ON conversation_events(run_id);
@@ -430,6 +460,55 @@ class SqliteStore:
     def fetch_az_alerts(self) -> list[dict]:
         rows = self._conn.execute(
             "SELECT * FROM az_alerts ORDER BY fired_time DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # M365 Copilot + Teams usage tables
+    # ------------------------------------------------------------------
+
+    def upsert_copilot_usage(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO m365_copilot_usage VALUES
+                    (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (r["user_principal_name"], r.get("display_name", ""),
+                     r.get("last_activity_date", ""), r.get("teams_chats"),
+                     r.get("teams_meetings"), r.get("word"), r.get("excel"),
+                     r.get("powerpoint"), r.get("outlook"), r.get("onenote"),
+                     r.get("loop"), r.get("copilot_chat"),
+                     r.get("report_refresh_date", ""), r.get("report_period", "")),
+                )
+                written += cur.rowcount
+        return written
+
+    def upsert_teams_usage(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO teams_usage VALUES
+                    (?,?,?,?,?,?,?,?,?,?)""",
+                    (r["user_principal_name"], r.get("last_activity_date", ""),
+                     r.get("team_chat_messages"), r.get("private_chat_messages"),
+                     r.get("calls"), r.get("meetings"),
+                     r.get("meetings_organized"), r.get("meetings_attended"),
+                     r.get("report_refresh_date", ""), r.get("report_period", "")),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_copilot_usage(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM m365_copilot_usage ORDER BY user_principal_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def fetch_teams_usage(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM teams_usage ORDER BY user_principal_name"
         ).fetchall()
         return [dict(r) for r in rows]
 

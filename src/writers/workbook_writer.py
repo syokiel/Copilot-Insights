@@ -10,8 +10,10 @@ from src.writers import (
     sheet_dlp,
     sheet_environments,
     sheet_invocations,
+    sheet_m365_copilot,
     sheet_publishers,
     sheet_summary,
+    sheet_teams_usage,
 )
 
 
@@ -26,6 +28,8 @@ def build_workbook(
     bot_solutions: list[dict] | None = None,
     health_detail: list[dict] | None = None,
     crossref_summary: list[dict] | None = None,
+    copilot_usage: list[dict] | None = None,
+    teams_usage: list[dict] | None = None,
 ) -> None:
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -37,6 +41,8 @@ def build_workbook(
     sheet_environments.write(wb.create_sheet("Environments"), environments or [])
     sheet_publishers.write(wb.create_sheet("Publishers"), publishers or [])
     sheet_dlp.write(wb.create_sheet("DLP Policies"), dlp_policies or [])
+    sheet_m365_copilot.write(wb.create_sheet("M365_Copilot_Usage"), copilot_usage or [])
+    sheet_teams_usage.write(wb.create_sheet("Teams_Usage"), teams_usage or [])
     sheet_az_health.write(wb.create_sheet("AzureMonitor_Health"), health_detail or [])
     sheet_crossref.write(wb.create_sheet("CrossRef_Summary"), crossref_summary or [])
 

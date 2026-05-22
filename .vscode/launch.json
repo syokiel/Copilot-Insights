@@ -1,0 +1,46 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Agent (local)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.agent.app",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "envFile": "${workspaceFolder}/.env.local",
+            "justMyCode": false,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Run MCP Server (local)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.mcp_server.server",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "MCP_TRANSPORT": "http",
+                "PORT": "8000"
+            },
+            "envFile": "${workspaceFolder}/.env.local",
+            "justMyCode": false,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Run Sync (MWC)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.main",
+            "args": ["--env", ".env.mwc", "all"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "justMyCode": false,
+            "console": "integratedTerminal"
+        }
+    ]
+}

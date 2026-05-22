@@ -204,23 +204,54 @@ class PowerPlatformClient:
 
     # ── bots ──
 
+    def _available_telemetry_fields(self, org_url: str) -> list[str]:
+        """Return the subset of BOT_TELEMETRY_FIELDS that exist in this env's schema."""
+        headers = self._headers(org_url)
+        available = []
+        for field in BOT_TELEMETRY_FIELDS:
+            r = requests.get(
+                f"{org_url}/api/data/v{DATAVERSE_API_VERSION}/bots",
+                headers=headers,
+                params={"$select": f"botid,{field}", "$top": "1"},
+                timeout=15,
+            )
+            if r.status_code == 200:
+                available.append(field)
+        return available
+
     def list_bots(self, env: Environment) -> list[BotRecord]:
         """Returns all bot records in a single Dataverse environment."""
+        headers = self._headers(env.org_url)
         fields_to_select = "botid,name," + ",".join(BOT_TELEMETRY_FIELDS.keys())
-        url = (
+        base_url = (
             f"{env.org_url}/api/data/v{DATAVERSE_API_VERSION}/bots"
             f"?$select={fields_to_select}&$filter=statecode eq 0"
         )
-        headers = self._headers(env.org_url)
+
+        # Probe with full field list first; fall back to schema detection on 400
+        probe = requests.get(base_url, headers=headers, timeout=30)
+        if probe.status_code == 404:
+            LOG.debug("  No bots table in %s (env may not use Copilot Studio).", env.name)
+            return []
+        if probe.status_code == 400:
+            LOG.info("  Older Copilot Studio schema detected in %s — probing available fields.", env.name)
+            available = self._available_telemetry_fields(env.org_url)
+            if not available:
+                LOG.info("  No App Insights telemetry fields found — skipping environment.")
+                return []
+            LOG.info("  Available telemetry fields: %s", available)
+            fields_to_select = "botid,name," + ",".join(available)
+            base_url = (
+                f"{env.org_url}/api/data/v{DATAVERSE_API_VERSION}/bots"
+                f"?$select={fields_to_select}&$filter=statecode eq 0"
+            )
+            probe = requests.get(base_url, headers=headers, timeout=30)
+
+        probe.raise_for_status()
 
         bots = []
-        while url:
-            resp = requests.get(url, headers=headers, timeout=30)
-            if resp.status_code == 404:
-                LOG.debug("  No bots table in %s (env may not use Copilot Studio).", env.name)
-                return []
-            resp.raise_for_status()
-            data = resp.json()
+        data = probe.json()
+        while True:
             for item in data.get("value", []):
                 bots.append(BotRecord(
                     bot_id         = item["botid"],
@@ -228,7 +259,10 @@ class PowerPlatformClient:
                     environment_id = env.id,
                     current_fields = {k: item.get(k) for k in BOT_TELEMETRY_FIELDS},
                 ))
-            url = data.get("@odata.nextLink")
+            next_url = data.get("@odata.nextLink")
+            if not next_url:
+                break
+            data = requests.get(next_url, headers=headers, timeout=30).json()
 
         return bots
 

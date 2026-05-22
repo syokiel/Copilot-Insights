@@ -14,6 +14,7 @@ from config.settings import settings
 from src.auth import get_logs_client
 from src.crossref import build_crossref
 from src.fetchers.azure_monitor_fetcher import AzureMonitorFetcher
+from src.fetchers.graph_fetcher import GraphFetcher
 from src.fetchers.otel_fetcher import OtelFetcher
 from src.fetchers.powerplatform_fetcher import PowerPlatformFetcher
 from src.store.sqlite_store import SqliteStore
@@ -128,6 +129,25 @@ def cmd_sync() -> str:
 
         pp_store.close()
 
+    print("Fetching Microsoft Graph data...")
+    graph_fetcher = GraphFetcher(
+        tenant_id=settings.azure_tenant_id,
+        client_id=settings.azure_client_id,
+        client_secret=settings.azure_client_secret,
+    )
+    graph_store = SqliteStore(settings.db_path)
+    for label, fetch_fn, upsert_fn in [
+        ("M365 Copilot usage", lambda: graph_fetcher.fetch_copilot_usage(settings.lookback_days), graph_store.upsert_copilot_usage),
+        ("Teams activity",     lambda: graph_fetcher.fetch_teams_activity(settings.lookback_days), graph_store.upsert_teams_usage),
+    ]:
+        try:
+            items = fetch_fn()
+            written = upsert_fn(items)
+            print(f"  {label}: {len(items)} fetched, {written} written")
+        except Exception as e:
+            print(f"  WARNING: {label} fetch failed: {e}")
+    graph_store.close()
+
     if settings.azure_storage_account:
         from src.store.blob_store import upload_db
         upload_db(
@@ -153,6 +173,8 @@ def cmd_export(run_id: str) -> None:
     az_dep_failures = store.fetch_az_dependency_failures()
     az_exceptions = store.fetch_az_exceptions()
     az_alerts = store.fetch_az_alerts()
+    copilot_usage = store.fetch_copilot_usage()
+    teams_usage = store.fetch_teams_usage()
     store.close()
 
     health_detail, crossref_summary = build_crossref(
@@ -175,7 +197,8 @@ def cmd_export(run_id: str) -> None:
                    bots=bots, environments=environments,
                    publishers=publishers, dlp_policies=dlp_policies,
                    bot_solutions=bot_solutions,
-                   health_detail=health_detail, crossref_summary=crossref_summary)
+                   health_detail=health_detail, crossref_summary=crossref_summary,
+                   copilot_usage=copilot_usage, teams_usage=teams_usage)
 
 
 def main() -> None:
