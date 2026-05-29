@@ -606,11 +606,13 @@ async def _run_stdio() -> None:
 
 
 def _run_http() -> None:
+    import contextlib
     from mcp.server.sse import SseServerTransport
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request
-    from starlette.responses import JSONResponse
+    from starlette.responses import JSONResponse, Response
     from starlette.routing import Mount, Route
     import uvicorn
 
@@ -625,23 +627,49 @@ def _run_http() -> None:
                 return JSONResponse({"error": str(e)}, status_code=401)
             return await call_next(request)
 
+    # Legacy SSE transport (Claude Code, older clients)
     sse = SseServerTransport("/messages/")
 
     async def handle_sse(request: Request):
         async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
             await server.run(streams[0], streams[1], server.create_initialization_options())
 
-    app = Starlette(
+    # Streamable HTTP transport (Copilot Studio, AI Foundry, newer MCP clients)
+    session_manager = StreamableHTTPSessionManager(
+        app=server,
+        event_store=None,
+        json_response=False,
+        stateless=True,   # stateless = no session pinning required; simplest for agent platforms
+    )
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        async with session_manager.run():
+            yield
+
+    starlette_app = Starlette(
+        lifespan=lifespan,
         routes=[
-            Route("/", endpoint=lambda r: JSONResponse({"status": "ok"})),
-            Route("/sse", endpoint=handle_sse),
+            Route("/",          endpoint=lambda r: JSONResponse({"status": "ok"})),
+            Route("/health",    endpoint=lambda r: JSONResponse({"status": "ok"})),
+            Route("/sse",       endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
-            Route("/health", endpoint=lambda r: JSONResponse({"status": "ok"})),
         ]
     )
-    app.add_middleware(EntraAuthMiddleware)
+    starlette_app.add_middleware(EntraAuthMiddleware)
 
-    uvicorn.run(app, host="0.0.0.0", port=settings.port)
+    # Route /mcp* to the StreamableHTTP session manager directly (no prefix stripping)
+    # and everything else to Starlette. This avoids Starlette's Mount stripping the
+    # path before passing to the ASGI handler.
+    async def root_app(scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            path = scope.get("path", "")
+            if path == "/mcp" or path.startswith("/mcp/"):
+                await session_manager.handle_request(scope, receive, send)
+                return
+        await starlette_app(scope, receive, send)
+
+    uvicorn.run(root_app, host="0.0.0.0", port=settings.port)
 
 
 if __name__ == "__main__":
