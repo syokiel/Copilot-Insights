@@ -2,7 +2,7 @@ import csv
 import io
 
 import requests
-from azure.identity import ClientSecretCredential
+from azure.core.credentials import TokenCredential
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
@@ -23,8 +23,8 @@ def _int(val: str) -> int | None:
 
 
 class GraphFetcher:
-    def __init__(self, tenant_id: str, client_id: str, client_secret: str) -> None:
-        self._credential = ClientSecretCredential(tenant_id, client_id, client_secret)
+    def __init__(self, credential: TokenCredential) -> None:
+        self._credential = credential
 
     def _headers(self) -> dict:
         token = self._credential.get_token(_GRAPH_SCOPE).token
@@ -64,6 +64,46 @@ class GraphFetcher:
                 "report_period": r.get("Report Period", ""),
             })
         return out
+
+    def resolve_users(self, user_ids: list[str]) -> list[dict]:
+        """
+        Resolve Azure AD object IDs to user profiles.
+        Returns one dict per unique ID; found=False when the user doesn't exist in the directory.
+        Silently skips IDs that error for reasons other than 404.
+        """
+        headers = self._headers()
+        results = []
+        seen: set[str] = set()
+        for uid in user_ids:
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                resp = requests.get(
+                    f"{_GRAPH_BASE}/users/{uid}",
+                    headers=headers,
+                    params={"$select": "id,displayName,userPrincipalName,department,jobTitle"},
+                    timeout=30,
+                )
+                if resp.status_code == 404:
+                    results.append({
+                        "user_id": uid, "display_name": "", "upn": "",
+                        "department": "", "job_title": "", "found": False,
+                    })
+                else:
+                    resp.raise_for_status()
+                    u = resp.json()
+                    results.append({
+                        "user_id": uid,
+                        "display_name": u.get("displayName", ""),
+                        "upn": u.get("userPrincipalName", ""),
+                        "department": u.get("department", "") or "",
+                        "job_title": u.get("jobTitle", "") or "",
+                        "found": True,
+                    })
+            except Exception:
+                continue
+        return results
 
     def fetch_teams_activity(self, lookback_days: int = 30) -> list[dict]:
         rows = self._fetch_csv(

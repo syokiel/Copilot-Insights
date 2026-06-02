@@ -23,7 +23,7 @@ import re
 from datetime import datetime, timezone
 
 import requests
-from azure.identity import ClientSecretCredential
+from azure.core.credentials import TokenCredential
 
 _GRAPH_BASE = "https://graph.microsoft.com"
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
@@ -44,8 +44,8 @@ def _row_id(*parts: str) -> str:
 
 
 class VivaFetcher:
-    def __init__(self, tenant_id: str, client_id: str, client_secret: str) -> None:
-        self._credential = ClientSecretCredential(tenant_id, client_id, client_secret)
+    def __init__(self, credential: TokenCredential) -> None:
+        self._credential = credential
 
     def _graph_headers(self) -> dict:
         token = self._credential.get_token(f"{_GRAPH_BASE}/.default").token

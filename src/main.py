@@ -11,7 +11,7 @@ if len(_args) >= 2 and _args[0] == "--env":
     sys.argv = [sys.argv[0]] + _args[2:]
 
 from config.settings import settings
-from src.auth import get_logs_client
+from src.auth import get_credential, get_logs_client
 from src.crossref import build_crossref
 from src.fetchers.azure_monitor_fetcher import AzureMonitorFetcher
 from src.fetchers.graph_fetcher import GraphFetcher
@@ -23,22 +23,29 @@ from src.writers.workbook_writer import build_workbook
 
 
 def cmd_sync() -> str:
-    """Fetch from Log Analytics and upsert into SQLite. Returns the run_id."""
+    """Fetch from all configured services and upsert into SQLite. Returns the run_id."""
     settings.validate()
 
-    fetcher = OtelFetcher(
-        client=get_logs_client(),
-        workspace_id=settings.log_analytics_workspace_id,
-        lookback=settings.lookback,
-    )
+    events: list[dict] = []
+    connector_calls: list[dict] = []
 
-    print("Fetching conversation events...")
-    events = fetcher.fetch_conversation_events()
-    print(f"  {len(events)} events")
-
-    print("Fetching connector calls...")
-    connector_calls = fetcher.fetch_connector_calls()
-    print(f"  {len(connector_calls)} connector calls")
+    if settings.log_analytics_workspace_id:
+        try:
+            fetcher = OtelFetcher(
+                client=get_logs_client(),
+                workspace_id=settings.log_analytics_workspace_id,
+                lookback=settings.lookback,
+            )
+            print("Fetching conversation events...")
+            events = fetcher.fetch_conversation_events()
+            print(f"  {len(events)} events")
+            print("Fetching connector calls...")
+            connector_calls = fetcher.fetch_connector_calls()
+            print(f"  {len(connector_calls)} connector calls")
+        except Exception as e:
+            print(f"  WARNING: Log Analytics fetch failed: {e}")
+    else:
+        print("Skipping Log Analytics sync (LOG_ANALYTICS_WORKSPACE_ID not set)")
 
     store = SqliteStore(settings.db_path)
     events_new, calls_new = store.upsert(events, connector_calls)
@@ -83,9 +90,7 @@ def cmd_sync() -> str:
     if settings.dataverse_url:
         print("Fetching Power Platform data...")
         pp_fetcher = PowerPlatformFetcher(
-            tenant_id=settings.azure_tenant_id,
-            client_id=settings.azure_client_id,
-            client_secret=settings.azure_client_secret,
+            credential=get_credential(),
             dataverse_url=settings.dataverse_url,
             environment_id=settings.powerplatform_environment_id,
         )
@@ -104,10 +109,14 @@ def cmd_sync() -> str:
             except Exception as e:
                 print(f"  WARNING: {label} fetch failed: {e}")
 
-        # Bots + solutions — iterate over every environment with a Dataverse URL
-        all_bots: list[dict] = []
+        # Agents + solutions — iterate environments with a Dataverse URL.
+        # POWERPLATFORM_AGENT_ENV_IDS (comma-separated) limits which environments are
+        # iterated; useful in large tenants where most environments are inaccessible.
+        all_agents: list[dict] = []
         all_solutions: list[dict] = []
         envs = pp_store.fetch_environments()
+        if settings.agent_env_ids:
+            envs = [e for e in envs if e.get("environment_id") in settings.agent_env_ids]
         for env in envs:
             dv_url = env.get("dataverse_url", "")
             env_id = env.get("environment_id", "")
@@ -115,27 +124,31 @@ def cmd_sync() -> str:
             if not dv_url:
                 continue
             try:
-                bots = pp_fetcher.fetch_bots_from(dv_url, env_id)
-                all_bots.extend(bots)
-                sols = pp_fetcher.fetch_bot_solutions_from(dv_url)
+                agents = pp_fetcher.fetch_agents_from(dv_url, env_id)
+                all_agents.extend(agents)
+                sols = pp_fetcher.fetch_agent_solutions_from(dv_url)
                 all_solutions.extend(sols)
-                print(f"  {env_name}: {len(bots)} bots, {len(sols)} solution links")
+                print(f"  {env_name}: {len(agents)} agents, {len(sols)} solution links")
             except Exception as e:
                 print(f"  {env_name}: WARNING — {e}")
 
-        written = pp_store.upsert_bots(all_bots)
-        print(f"  bots total: {len(all_bots)} fetched, {written} written")
-        written = pp_store.upsert_bot_solutions(all_solutions)
-        print(f"  bot solutions total: {len(all_solutions)} fetched, {written} written")
+        written = pp_store.upsert_agents(all_agents)
+        print(f"  agents total: {len(all_agents)} fetched, {written} written")
+        written = pp_store.upsert_agent_solutions(all_solutions)
+        print(f"  agent solutions total: {len(all_solutions)} fetched, {written} written")
+
+        # Inventory API — tenant-wide V2 agents with createdBy / ownerId / createdIn
+        try:
+            inventory_agents = pp_fetcher.fetch_inventory_agents()
+            written = pp_store.upsert_agents(inventory_agents)
+            print(f"  inventory agents: {len(inventory_agents)} fetched, {written} written")
+        except Exception as e:
+            print(f"  WARNING: inventory agents fetch failed: {e}")
 
         pp_store.close()
 
     print("Fetching Microsoft Graph data...")
-    graph_fetcher = GraphFetcher(
-        tenant_id=settings.azure_tenant_id,
-        client_id=settings.azure_client_id,
-        client_secret=settings.azure_client_secret,
-    )
+    graph_fetcher = GraphFetcher(credential=get_credential())
     graph_store = SqliteStore(settings.db_path)
     for label, fetch_fn, upsert_fn in [
         ("M365 Copilot usage", lambda: graph_fetcher.fetch_copilot_usage(settings.lookback_days), graph_store.upsert_copilot_usage),
@@ -147,27 +160,32 @@ def cmd_sync() -> str:
             print(f"  {label}: {len(items)} fetched, {written} written")
         except Exception as e:
             print(f"  WARNING: {label} fetch failed: {e}")
+
+    # Resolve agent owner IDs to AAD user profiles (skip IDs already cached)
+    try:
+        existing_ids = set(graph_store.fetch_aad_users().keys())
+        owner_ids = [
+            uid for uid in {
+                a.get("owner_id", "") for a in graph_store.fetch_agents()
+                if a.get("owner_id")
+            }
+            if uid not in existing_ids
+        ]
+        if owner_ids:
+            resolved = graph_fetcher.resolve_users(owner_ids)
+            written = graph_store.upsert_aad_users(resolved)
+            found = sum(1 for u in resolved if u.get("found"))
+            print(f"  user directory: {len(owner_ids)} looked up, {found} found, {written} written")
+    except Exception as e:
+        print(f"  WARNING: user directory lookup failed: {e}")
+
     graph_store.close()
 
     print("Fetching Viva Insights data...")
-    viva_fetcher = VivaFetcher(
-        tenant_id=settings.azure_tenant_id,
-        client_id=settings.azure_client_id,
-        client_secret=settings.azure_client_secret,
-    )
+    viva_fetcher = VivaFetcher(credential=get_credential())
     viva_store = SqliteStore(settings.db_path)
 
-    # Collect user IDs from existing conversation data to scope the per-user fetch
-    known_user_ids = [
-        r["user_id"] for r in viva_store.fetch_viva_person_insights()
-    ] if False else []  # bootstrap: pull from conversation_events on first run
-    known_user_ids = list({
-        row["user_id"]
-        for row in viva_store._conn.execute(
-            "SELECT DISTINCT user_id FROM conversation_events "
-            "WHERE user_id IS NOT NULL AND user_id != '' AND design_mode = 0"
-        ).fetchall()
-    })
+    known_user_ids = viva_store.fetch_known_user_ids()
 
     for label, fetch_fn, upsert_fn in [
         ("person insights",
@@ -202,11 +220,12 @@ def cmd_export(run_id: str) -> None:
     store = SqliteStore(settings.db_path)
     events = store.fetch_events_since(settings.lookback)
     connector_calls = store.fetch_calls_since(settings.lookback)
-    bots = store.fetch_bots()
+    agents = store.fetch_agents()
     environments = store.fetch_environments()
     publishers = store.fetch_publishers()
     dlp_policies = store.fetch_dlp_policies()
-    bot_solutions = store.fetch_bot_solutions()
+    agent_solutions = store.fetch_agent_solutions()
+    aad_users = store.fetch_aad_users()
     az_dep_failures = store.fetch_az_dependency_failures()
     az_exceptions = store.fetch_az_exceptions()
     az_alerts = store.fetch_az_alerts()
@@ -224,16 +243,16 @@ def cmd_export(run_id: str) -> None:
 
     print(f"Exporting run {run_id[:8]} (last {settings.lookback_days} days)...")
     print(f"  {len(events)} events, {len(connector_calls)} connector calls")
-    print(f"  {len(bots)} agents, {len(environments)} environments, {len(publishers)} publishers, {len(dlp_policies)} DLP policies, {len(bot_solutions)} bot-solution links")
+    print(f"  {len(agents)} agents, {len(environments)} environments, {len(publishers)} publishers, {len(dlp_policies)} DLP policies, {len(agent_solutions)} agent-solution links")
     print(f"  {len(health_detail)} health rows, {len(crossref_summary)} flagged conversations")
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     p = Path(settings.output_path)
     output_path = str(p.parent / f"{p.stem}_{ts}{p.suffix}")
     build_workbook(events, connector_calls, output_path,
-                   bots=bots, environments=environments,
+                   agents=agents, environments=environments,
                    publishers=publishers, dlp_policies=dlp_policies,
-                   bot_solutions=bot_solutions,
+                   agent_solutions=agent_solutions, aad_users=aad_users,
                    health_detail=health_detail, crossref_summary=crossref_summary,
                    copilot_usage=copilot_usage, teams_usage=teams_usage)
 

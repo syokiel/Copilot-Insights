@@ -1,13 +1,19 @@
-from azure.identity import ClientSecretCredential, InteractiveBrowserCredential
+from azure.core.credentials import TokenCredential
+from azure.identity import (
+    AzureCliCredential,
+    ChainedTokenCredential,
+    ClientSecretCredential,
+    InteractiveBrowserCredential,
+)
 from azure.monitor.query import LogsQueryClient
 from msgraph import GraphServiceClient
 
 from config.settings import settings
 
-_credential: ClientSecretCredential | InteractiveBrowserCredential | None = None
+_credential: TokenCredential | None = None
 
 
-def get_credential() -> ClientSecretCredential | InteractiveBrowserCredential:
+def get_credential() -> TokenCredential:
     global _credential
     if _credential is None:
         if settings.azure_client_id and settings.azure_client_secret:
@@ -17,9 +23,11 @@ def get_credential() -> ClientSecretCredential | InteractiveBrowserCredential:
                 client_secret=settings.azure_client_secret,
             )
         else:
-            # Fall back to interactive browser login
-            _credential = InteractiveBrowserCredential(
-                tenant_id=settings.azure_tenant_id or None,
+            # No service principal — try Azure CLI first, then browser
+            tenant_id = settings.azure_tenant_id or None
+            _credential = ChainedTokenCredential(
+                AzureCliCredential(tenant_id=tenant_id),
+                InteractiveBrowserCredential(tenant_id=tenant_id),
             )
     return _credential
 

@@ -21,11 +21,12 @@ def build_workbook(
     events: list[dict],
     connector_calls: list[dict],
     output_path: str,
-    bots: list[dict] | None = None,
+    agents: list[dict] | None = None,
     environments: list[dict] | None = None,
     publishers: list[dict] | None = None,
     dlp_policies: list[dict] | None = None,
-    bot_solutions: list[dict] | None = None,
+    agent_solutions: list[dict] | None = None,
+    aad_users: dict[str, dict] | None = None,
     health_detail: list[dict] | None = None,
     crossref_summary: list[dict] | None = None,
     copilot_usage: list[dict] | None = None,
@@ -37,7 +38,7 @@ def build_workbook(
     sheet_summary.write(wb.create_sheet("Summary"), events, connector_calls)
     sheet_invocations.write(wb.create_sheet("Invocations"), events, connector_calls)
     sheet_connectors.write(wb.create_sheet("Connectors"), connector_calls)
-    sheet_agents.write(wb.create_sheet("Agents"), bots or [], environments or [], bot_solutions or [])
+    sheet_agents.write(wb.create_sheet("Agents"), agents or [], environments or [], agent_solutions or [], aad_users or {})
     sheet_environments.write(wb.create_sheet("Environments"), environments or [])
     sheet_publishers.write(wb.create_sheet("Publishers"), publishers or [])
     sheet_dlp.write(wb.create_sheet("DLP Policies"), dlp_policies or [])

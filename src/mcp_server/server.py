@@ -76,8 +76,8 @@ CREATE TABLE IF NOT EXISTS connector_calls (
 CREATE TABLE IF NOT EXISTS sync_runs (
     run_id TEXT PRIMARY KEY, started_at TEXT, events_new INTEGER, calls_new INTEGER
 );
-CREATE TABLE IF NOT EXISTS pva_bots (
-    bot_id TEXT PRIMARY KEY, display_name TEXT, schema_name TEXT, environment_id TEXT,
+CREATE TABLE IF NOT EXISTS pva_agents (
+    agent_id TEXT PRIMARY KEY, display_name TEXT, schema_name TEXT, environment_id TEXT,
     created_at TEXT, modified_at TEXT, published_at TEXT, properties TEXT
 );
 CREATE TABLE IF NOT EXISTS pva_environments (
@@ -93,8 +93,8 @@ CREATE TABLE IF NOT EXISTS pva_dlp_policies (
     created_by TEXT, created_at TEXT, modified_at TEXT, enforcement_mode TEXT,
     blocked_connectors TEXT, business_connectors TEXT, non_business_connectors TEXT
 );
-CREATE TABLE IF NOT EXISTS pva_bot_solutions (
-    bot_id TEXT PRIMARY KEY, solution_id TEXT, solution_name TEXT,
+CREATE TABLE IF NOT EXISTS pva_agent_solutions (
+    agent_id TEXT PRIMARY KEY, solution_id TEXT, solution_name TEXT,
     solution_unique TEXT, version TEXT, is_managed INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS az_dependency_failures (
@@ -181,26 +181,27 @@ Every time the agent invoked a Power Platform connector.
 ### sync_runs
 One row per data sync run — when data was last refreshed.
 
-### pva_bots
-Copilot Studio / Power Virtual Agents bots registered in the Power Platform environment.
-- bot_id: GUID of the bot
-- display_name: Human-readable bot name (use this when reporting agent names)
+### pva_agents
+Copilot Studio agents registered in the Power Platform environment.
+- agent_id: GUID of the agent
+- display_name: Human-readable agent name (use this when reporting agent names)
 - schema_name: Internal schema identifier
 - environment_id: Power Platform environment GUID (join to pva_environments)
 - created_at, modified_at, published_at: ISO timestamps
+- created_by, owner_id, created_in: populated from the PP Inventory API
 
 ### pva_environments
 Power Platform environments where agents are deployed.
-- environment_id: GUID — joins to pva_bots.environment_id
+- environment_id: GUID — joins to pva_agents.environment_id
 - display_name: Human-readable environment name
 - type / sku: e.g. Sandbox, Production, Default
 - region: Azure region
 - state: Ready / Disabled
 - dataverse_url: Dataverse org URL for this environment
 
-### pva_bot_solutions
-Solution each bot/agent is packaged in (from Dataverse solutioncomponents).
-- bot_id: joins to pva_bots.bot_id
+### pva_agent_solutions
+Solution each agent is packaged in (from Dataverse solutioncomponents).
+- agent_id: joins to pva_agents.agent_id
 - solution_name: Human-readable solution name
 - solution_unique: Internal unique name (e.g. "WorkIQAgents")
 - version: solution version string
@@ -267,9 +268,9 @@ Azure Monitor alerts that fired against agent resources.
 conversation_events.conversation_id = connector_calls.conversation_id
 conversation_events.conversation_id = az_dependency_failures.conversation_id
 conversation_events.conversation_id = az_exceptions.conversation_id
-pva_bots.environment_id = pva_environments.environment_id
-pva_bots.bot_id = pva_bot_solutions.bot_id
-pva_bots.bot_id = az_dependency_failures.agent_id (approximate — depends on agent config)
+pva_agents.environment_id = pva_environments.environment_id
+pva_agents.agent_id = pva_agent_solutions.agent_id
+pva_agents.agent_id = az_dependency_failures.agent_id (approximate — depends on agent config)
 
 ## Cross-reference pattern
 To find conversations with both OTel failures AND Azure Monitor signals:
@@ -284,7 +285,7 @@ To find conversations with both OTel failures AND Azure Monitor signals:
 ## Notes
 - Filter design_mode = 0 for production traffic only
 - user_id is an Azure AD object ID (Graph API lookup needed for email)
-- There is NO agent_name column in conversation_events or connector_calls — use pva_bots for agent names
+- There is NO agent_name column in conversation_events or connector_calls — use pva_agents for agent names
 - az_* tables will be empty until agents are configured to write to Application Insights
 """
 
@@ -610,7 +611,7 @@ def _run_sql(conn: sqlite3.Connection, query: str) -> list[dict]:
 def _get_agents(conn: sqlite3.Connection) -> list[dict]:
     return _rows(conn, """
         SELECT
-            b.bot_id,
+            b.agent_id,
             b.display_name,
             b.environment_id,
             e.display_name   AS environment_name,
@@ -618,13 +619,16 @@ def _get_agents(conn: sqlite3.Connection) -> list[dict]:
             b.created_at,
             b.modified_at,
             b.published_at,
+            b.created_by,
+            b.owner_id,
+            b.created_in,
             s.solution_name,
             s.solution_unique,
             s.version        AS solution_version,
             s.is_managed
-        FROM pva_bots b
+        FROM pva_agents b
         LEFT JOIN pva_environments e ON e.environment_id = b.environment_id
-        LEFT JOIN pva_bot_solutions s ON s.bot_id = b.bot_id
+        LEFT JOIN pva_agent_solutions s ON s.agent_id = b.agent_id
         ORDER BY b.display_name
     """)
 
@@ -632,7 +636,7 @@ def _get_agents(conn: sqlite3.Connection) -> list[dict]:
 def _get_environments(conn: sqlite3.Connection) -> list[dict]:
     envs = _rows(conn, "SELECT * FROM pva_environments ORDER BY display_name")
     agents_by_env = {}
-    for r in _rows(conn, "SELECT environment_id, display_name FROM pva_bots"):
+    for r in _rows(conn, "SELECT environment_id, display_name FROM pva_agents"):
         agents_by_env.setdefault(r["environment_id"], []).append(r["display_name"])
 
     dlp_all = _rows(conn, "SELECT display_name, environment_type, blocked_connectors, business_connectors, non_business_connectors FROM pva_dlp_policies")
@@ -701,11 +705,11 @@ def _get_agent_activity(conn: sqlite3.Connection, args: dict) -> list[dict]:
             COUNT(DISTINCT CASE WHEN e.design_mode = 0 THEN e.conversation_id END)  AS production_conversations,
             COUNT(DISTINCT CASE WHEN e.design_mode = 1 THEN e.conversation_id END)  AS test_conversations,
             MAX(e.timestamp)        AS last_activity
-        FROM pva_bots b
+        FROM pva_agents b
         LEFT JOIN pva_environments env ON env.environment_id = b.environment_id
         LEFT JOIN conversation_events e
             ON e.topic_name LIKE b.schema_name || '.topic.%' {dm_filter}
-        GROUP BY b.bot_id, b.display_name, b.schema_name, b.published_at, env.display_name
+        GROUP BY b.agent_id, b.display_name, b.schema_name, b.published_at, env.display_name
         ORDER BY last_activity DESC NULLS LAST
     """, tuple(params))
 

@@ -48,6 +48,10 @@ class Settings:
     # Power Platform / Dataverse
     dataverse_url: str = ""
     powerplatform_environment_id: str = ""
+    # Comma-separated list of environment IDs to fetch agents from.
+    # When set, only these environments are iterated (useful in large tenants).
+    # Leave blank to iterate all discovered environments.
+    agent_env_ids: set = None  # populated in __post_init__
     # MCP server (HTTP deployment)
     mcp_tenant_id: str = ""
     mcp_app_id_uri: str = ""
@@ -69,8 +73,13 @@ class Settings:
         self.azure_storage_db_blob = os.getenv("AZURE_STORAGE_DB_BLOB", self.azure_storage_db_blob)
         self.azure_monitor_workspace_id = os.getenv("AZURE_MONITOR_WORKSPACE_ID", self.azure_monitor_workspace_id)
         self.azure_monitor_subscription_id = os.getenv("AZURE_MONITOR_SUBSCRIPTION_ID", self.azure_monitor_subscription_id)
-        self.dataverse_url = os.getenv("DATAVERSE_URL", self.dataverse_url)
+        dv = os.getenv("DATAVERSE_URL", self.dataverse_url).strip()
+        if dv and not dv.startswith("http"):
+            dv = f"https://{dv}"
+        self.dataverse_url = dv
         self.powerplatform_environment_id = os.getenv("POWERPLATFORM_ENVIRONMENT_ID", self.powerplatform_environment_id)
+        raw_ids = os.getenv("POWERPLATFORM_AGENT_ENV_IDS", "")
+        self.agent_env_ids = {i.strip() for i in raw_ids.split(",") if i.strip()} if raw_ids else set()
         self.mcp_tenant_id = os.getenv("MCP_TENANT_ID", self.mcp_tenant_id)
         self.mcp_app_id_uri = os.getenv("MCP_APP_ID_URI", self.mcp_app_id_uri)
         self.mcp_api_key = os.getenv("MCP_API_KEY", self.mcp_api_key)
@@ -81,8 +90,14 @@ class Settings:
         return timedelta(days=self.lookback_days)
 
     def validate(self) -> None:
-        if not self.log_analytics_workspace_id:
-            raise EnvironmentError("Missing required env var: LOG_ANALYTICS_WORKSPACE_ID")
+        if not self.azure_tenant_id:
+            raise EnvironmentError("Missing required env var: AZURE_TENANT_ID")
+        # If a service principal is partially configured, both parts are required
+        if bool(self.azure_client_id) != bool(self.azure_client_secret):
+            missing = "AZURE_CLIENT_SECRET" if self.azure_client_id else "AZURE_CLIENT_ID"
+            raise EnvironmentError(
+                f"Partial service principal config — set {missing} or remove both to use CLI auth"
+            )
 
 
 settings = Settings()

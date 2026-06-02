@@ -46,14 +46,17 @@ CREATE TABLE IF NOT EXISTS connector_calls (
     properties      TEXT
 );
 
-CREATE TABLE IF NOT EXISTS pva_bots (
-    bot_id          TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS pva_agents (
+    agent_id        TEXT PRIMARY KEY,
     display_name    TEXT,
     schema_name     TEXT,
     environment_id  TEXT,
     created_at      TEXT,
     modified_at     TEXT,
     published_at    TEXT,
+    created_by      TEXT,
+    owner_id        TEXT,
+    created_in      TEXT,
     properties      TEXT
 );
 
@@ -92,8 +95,8 @@ CREATE TABLE IF NOT EXISTS pva_dlp_policies (
     non_business_connectors TEXT
 );
 
-CREATE TABLE IF NOT EXISTS pva_bot_solutions (
-    bot_id          TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS pva_agent_solutions (
+    agent_id        TEXT PRIMARY KEY,
     solution_id     TEXT,
     solution_name   TEXT,
     solution_unique TEXT,
@@ -195,7 +198,16 @@ CREATE TABLE IF NOT EXISTS viva_org_insights (
     fetched_at          TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_bot_sol      ON pva_bot_solutions(solution_id);
+CREATE TABLE IF NOT EXISTS aad_users (
+    user_id      TEXT PRIMARY KEY,
+    display_name TEXT,
+    upn          TEXT,
+    department   TEXT,
+    job_title    TEXT,
+    found        INTEGER DEFAULT 1  -- 0 when Graph returned 404 for this ID
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_sol    ON pva_agent_solutions(solution_id);
 CREATE INDEX IF NOT EXISTS idx_events_conv  ON conversation_events(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_events_run   ON conversation_events(run_id);
 CREATE INDEX IF NOT EXISTS idx_calls_conv   ON connector_calls(conversation_id);
@@ -221,7 +233,46 @@ class SqliteStore:
         self._conn = sqlite3.connect(db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_DDL)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        tables = {
+            row[0]
+            for row in self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        # Rename legacy tables
+        if "pva_bots" in tables and "pva_agents" not in tables:
+            self._conn.execute("ALTER TABLE pva_bots RENAME TO pva_agents")
+        if "pva_bot_solutions" in tables and "pva_agent_solutions" not in tables:
+            self._conn.execute("ALTER TABLE pva_bot_solutions RENAME TO pva_agent_solutions")
+        # Rename legacy bot_id column → agent_id
+        agent_cols = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(pva_agents)").fetchall()
+        }
+        if "bot_id" in agent_cols:
+            self._conn.execute("ALTER TABLE pva_agents RENAME COLUMN bot_id TO agent_id")
+        sol_cols = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(pva_agent_solutions)").fetchall()
+        }
+        if "bot_id" in sol_cols:
+            self._conn.execute("ALTER TABLE pva_agent_solutions RENAME COLUMN bot_id TO agent_id")
+        # Add new columns added in the inventory-API integration
+        agent_cols = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(pva_agents)").fetchall()
+        }
+        for col, typedef in [
+            ("created_by", "TEXT"),
+            ("owner_id",   "TEXT"),
+            ("created_in", "TEXT"),
+        ]:
+            if col not in agent_cols:
+                self._conn.execute(f"ALTER TABLE pva_agents ADD COLUMN {col} {typedef}")
 
     def upsert(self, events: list[dict], connector_calls: list[dict]) -> tuple[int, int]:
         """Insert new records, skip duplicates. Returns (new_events, new_calls)."""
@@ -328,17 +379,23 @@ class SqliteStore:
         ).fetchall()
         return [_to_call_dict(r) for r in rows]
 
-    def upsert_bots(self, bots: list[dict]) -> int:
-        """Insert or replace bot records. Returns count of rows written."""
+    def upsert_agents(self, agents: list[dict]) -> int:
+        """Insert or replace agent records. Returns count of rows written."""
+        _known = {
+            "id", "botId", "name", "displayName", "schemaName",
+            "environmentId", "createdDateTime", "modifiedDateTime",
+            "publishedDateTime", "createdBy", "ownerId", "createdIn",
+        }
         written = 0
         with self._conn:
-            for b in bots:
+            for b in agents:
                 cur = self._conn.execute(
                     """
-                    INSERT OR REPLACE INTO pva_bots
-                    (bot_id, display_name, schema_name, environment_id,
-                     created_at, modified_at, published_at, properties)
-                    VALUES (?,?,?,?,?,?,?,?)
+                    INSERT OR REPLACE INTO pva_agents
+                    (agent_id, display_name, schema_name, environment_id,
+                     created_at, modified_at, published_at,
+                     created_by, owner_id, created_in, properties)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         b.get("id") or b.get("botId", ""),
@@ -348,11 +405,10 @@ class SqliteStore:
                         b.get("createdDateTime", ""),
                         b.get("modifiedDateTime", ""),
                         b.get("publishedDateTime", ""),
-                        json.dumps({k: v for k, v in b.items() if k not in (
-                            "id", "botId", "name", "displayName", "schemaName",
-                            "environmentId", "createdDateTime", "modifiedDateTime",
-                            "publishedDateTime",
-                        )}),
+                        b.get("createdBy", ""),
+                        b.get("ownerId", ""),
+                        b.get("createdIn", ""),
+                        json.dumps({k: v for k, v in b.items() if k not in _known}),
                     ),
                 )
                 written += cur.rowcount
@@ -364,8 +420,9 @@ class SqliteStore:
             for e in envs:
                 cur = self._conn.execute(
                     "INSERT OR REPLACE INTO pva_environments VALUES (?,?,?,?,?,?,?,?,?)",
-                    (e["environment_id"], e["display_name"], e["type"], e["region"],
-                     e["state"], e["created_at"], e["modified_at"], e["sku"], e["dataverse_url"]),
+                    (e.get("environment_id", ""), e.get("display_name", ""), e.get("type", ""),
+                     e.get("region", ""), e.get("state", ""), e.get("created_at", ""),
+                     e.get("modified_at", ""), e.get("sku", ""), e.get("dataverse_url", "")),
                 )
                 written += cur.rowcount
         return written
@@ -376,8 +433,9 @@ class SqliteStore:
             for p in publishers:
                 cur = self._conn.execute(
                     "INSERT OR REPLACE INTO pva_publishers VALUES (?,?,?,?,?,?,?)",
-                    (p["publisher_id"], p["display_name"], p["unique_name"],
-                     p["email"], p["phone"], p["custom_prefix"], p.get("solution_count")),
+                    (p.get("publisher_id", ""), p.get("display_name", ""), p.get("unique_name", ""),
+                     p.get("email", ""), p.get("phone", ""), p.get("custom_prefix", ""),
+                     p.get("solution_count")),
                 )
                 written += cur.rowcount
         return written
@@ -388,28 +446,29 @@ class SqliteStore:
             for p in policies:
                 cur = self._conn.execute(
                     "INSERT OR REPLACE INTO pva_dlp_policies VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (p["policy_id"], p["display_name"], p["environment_type"],
-                     p["created_by"], p["created_at"], p["modified_at"],
-                     p["enforcement_mode"], p["blocked_connectors"],
-                     p["business_connectors"], p["non_business_connectors"]),
+                    (p.get("policy_id", ""), p.get("display_name", ""), p.get("environment_type", ""),
+                     p.get("created_by", ""), p.get("created_at", ""), p.get("modified_at", ""),
+                     p.get("enforcement_mode", ""), p.get("blocked_connectors", ""),
+                     p.get("business_connectors", ""), p.get("non_business_connectors", "")),
                 )
                 written += cur.rowcount
         return written
 
-    def upsert_bot_solutions(self, rows: list[dict]) -> int:
+    def upsert_agent_solutions(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    "INSERT OR REPLACE INTO pva_bot_solutions VALUES (?,?,?,?,?,?)",
-                    (r["bot_id"], r["solution_id"], r["solution_name"],
-                     r["solution_unique"], r["version"], 1 if r.get("is_managed") else 0),
+                    "INSERT OR REPLACE INTO pva_agent_solutions VALUES (?,?,?,?,?,?)",
+                    (r.get("agent_id", ""), r.get("solution_id", ""), r.get("solution_name", ""),
+                     r.get("solution_unique", ""), r.get("version", ""),
+                     1 if r.get("is_managed") else 0),
                 )
                 written += cur.rowcount
         return written
 
-    def fetch_bot_solutions(self) -> list[dict]:
-        rows = self._conn.execute("SELECT * FROM pva_bot_solutions ORDER BY solution_name").fetchall()
+    def fetch_agent_solutions(self) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM pva_agent_solutions ORDER BY solution_name").fetchall()
         return [dict(r) for r in rows]
 
     def fetch_environments(self) -> list[dict]:
@@ -424,9 +483,11 @@ class SqliteStore:
         rows = self._conn.execute("SELECT * FROM pva_dlp_policies ORDER BY display_name").fetchall()
         return [dict(r) for r in rows]
 
-    def fetch_bots(self) -> list[dict]:
+    def fetch_agents(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT bot_id, display_name, schema_name, environment_id, created_at, modified_at, published_at FROM pva_bots ORDER BY display_name"
+            "SELECT agent_id, display_name, schema_name, environment_id, "
+            "created_at, modified_at, published_at, created_by, owner_id, created_in "
+            "FROM pva_agents ORDER BY display_name"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -595,6 +656,32 @@ class SqliteStore:
             "SELECT * FROM viva_org_insights ORDER BY metric_date DESC"
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def upsert_aad_users(self, users: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for u in users:
+                cur = self._conn.execute(
+                    "INSERT OR REPLACE INTO aad_users VALUES (?,?,?,?,?,?)",
+                    (u.get("user_id", ""), u.get("display_name", ""), u.get("upn", ""),
+                     u.get("department", ""), u.get("job_title", ""),
+                     1 if u.get("found", True) else 0),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_aad_users(self) -> dict[str, dict]:
+        """Returns {user_id: row_dict} for O(1) lookup in the sheet writers."""
+        rows = self._conn.execute("SELECT * FROM aad_users").fetchall()
+        return {row["user_id"]: dict(row) for row in rows}
+
+    def fetch_known_user_ids(self) -> list[str]:
+        """Return distinct non-empty user IDs from non-design-mode conversation events."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT user_id FROM conversation_events "
+            "WHERE user_id IS NOT NULL AND user_id != '' AND design_mode = 0"
+        ).fetchall()
+        return [row["user_id"] for row in rows]
 
     def close(self) -> None:
         self._conn.close()

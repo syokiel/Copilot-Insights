@@ -1,8 +1,10 @@
 import requests
-from azure.identity import ClientSecretCredential
+from azure.core.credentials import TokenCredential
 
 _PP_API_BASE = "https://api.powerplatform.com"
 _PP_SCOPE = "https://api.powerplatform.com/.default"
+_INVENTORY_API = f"{_PP_API_BASE}/resourcequery/resources/query?api-version=2024-10-01"
+_INVENTORY_PAGE_SIZE = 1000
 
 # BAP endpoint — used by configure_agent_telemetry.py; returns all tenant environments
 _BAP_BASE = "https://api.bap.microsoft.com"
@@ -16,17 +18,14 @@ _DISCO_SCOPE = "https://globaldisco.crm.dynamics.com/.default"
 class PowerPlatformFetcher:
     def __init__(
         self,
-        tenant_id: str,
-        client_id: str,
-        client_secret: str,
-        dataverse_url: str,
+        credential: TokenCredential,
+        dataverse_url: str = "",
         environment_id: str = "",
     ) -> None:
-        self._tenant_id = tenant_id
         self._dataverse_url = dataverse_url.rstrip("/")
         self._environment_id = environment_id
-        self._credential = ClientSecretCredential(tenant_id, client_id, client_secret)
-        self._dv_scope = f"{self._dataverse_url}/.default"
+        self._credential = credential
+        self._dv_scope = f"{self._dataverse_url}/.default" if dataverse_url else ""
 
     def _headers(self) -> dict:
         """Dataverse Web API headers."""
@@ -56,11 +55,11 @@ class PowerPlatformFetcher:
         return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     # ------------------------------------------------------------------
-    # Bots (Dataverse) — single env or all environments
+    # Agents (Dataverse) — single env or all environments
     # ------------------------------------------------------------------
 
-    def fetch_bots_from(self, dataverse_url: str, environment_id: str) -> list[dict]:
-        """Fetch bots from a specific Dataverse org URL."""
+    def fetch_agents_from(self, dataverse_url: str, environment_id: str) -> list[dict]:
+        """Fetch agents from a specific Dataverse org URL."""
         dv_url = dataverse_url.rstrip("/")
         scope = f"{dv_url}/.default"
         token = self._credential.get_token(scope).token
@@ -90,9 +89,79 @@ class PowerPlatformFetcher:
             for b in resp.json().get("value", [])
         ]
 
-    def fetch_bots(self) -> list[dict]:
-        """Fetch bots from the configured Dataverse URL (single-environment convenience wrapper)."""
-        return self.fetch_bots_from(self._dataverse_url, self._environment_id)
+    def fetch_agents(self) -> list[dict]:
+        """Fetch agents from the configured Dataverse URL (single-environment convenience wrapper)."""
+        return self.fetch_agents_from(self._dataverse_url, self._environment_id)
+
+    def fetch_inventory_agents(self) -> list[dict]:
+        """
+        Fetch ALL Copilot Studio V2 agents across the entire tenant via the
+        Power Platform Inventory API (bypasses the 1,000-item PPAC display cap).
+
+        Returns richer metadata than the per-environment Dataverse agent API:
+        createdBy, ownerId, createdIn (Copilot Studio / Agent Builder).
+        Classic PVA V1 agents are NOT included.
+        """
+        headers = self._pp_headers()
+        field_list = [
+            "agentId = name",
+            "displayName = tostring(properties.displayName)",
+            "environmentId = tostring(properties.environmentId)",
+            "createdAt = tostring(properties.createdAt)",
+            "createdBy = tostring(properties.createdBy)",
+            "ownerId = tostring(properties.ownerId)",
+            "lastPublishedAt = tostring(properties.lastPublishedAt)",
+            "createdIn = tostring(properties.createdIn)",
+            "schemaName = tostring(properties.schemaName)",
+        ]
+        rows, seen, skip_token, prev_token = [], set(), "", None
+        while True:
+            options: dict = {"Top": _INVENTORY_PAGE_SIZE}
+            if skip_token:
+                options["SkipToken"] = skip_token
+            body = {
+                "TableName": "PowerPlatformResources",
+                "Clauses": [
+                    {"$type": "where", "FieldName": "type",
+                     "Operator": "==", "Values": ["'microsoft.copilotstudio/agents'"]},
+                    {"$type": "project", "FieldList": field_list},
+                ],
+                "Options": options,
+            }
+            resp = requests.post(_INVENTORY_API, headers=headers, json=body, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+            page = data.get("data", [])
+            new = 0
+            for r in page:
+                key = r.get("agentId")
+                if key not in seen:
+                    seen.add(key)
+                    rows.append({
+                        "id": r.get("agentId", ""),
+                        "name": r.get("displayName", ""),
+                        "schemaName": r.get("schemaName", ""),
+                        "environmentId": r.get("environmentId", ""),
+                        "createdDateTime": r.get("createdAt", ""),
+                        "modifiedDateTime": "",
+                        "publishedDateTime": r.get("lastPublishedAt", ""),
+                        "createdBy": r.get("createdBy", ""),
+                        "ownerId": r.get("ownerId", ""),
+                        "createdIn": r.get("createdIn", ""),
+                    })
+                    new += 1
+            total = data.get("totalRecords")
+            skip_token = data.get("skipToken") or ""
+            if not skip_token:
+                break
+            if total is not None and len(rows) >= total:
+                break
+            if new == 0:
+                break
+            if skip_token == prev_token:
+                break
+            prev_token = skip_token
+        return rows
 
     # ------------------------------------------------------------------
     # Environments (Power Platform Admin API)
@@ -133,8 +202,8 @@ class PowerPlatformFetcher:
                 })
             if out:
                 return out
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  WARNING: BAP Admin API unavailable ({e}), trying Global Discovery...")
 
         # ── 2. Global Discovery (orgs the SP has Dataverse access to) ───────────
         try:
@@ -159,8 +228,8 @@ class PowerPlatformFetcher:
                 })
             if out:
                 return out
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  WARNING: Global Discovery unavailable ({e}), using config fallback")
 
         # ── 3. Config fallback (single env) ─────────────────────────────────────
         if self._environment_id:
@@ -212,9 +281,9 @@ class PowerPlatformFetcher:
     # Solutions (Dataverse)
     # ------------------------------------------------------------------
 
-    def fetch_bot_solutions_from(self, dataverse_url: str) -> list[dict]:
+    def fetch_agent_solutions_from(self, dataverse_url: str) -> list[dict]:
         """
-        Return solution membership for bots in a specific Dataverse org.
+        Return solution membership for agents in a specific Dataverse org.
         componenttype 380 = Chatbot in Power Platform.
         Returns empty list if the component type doesn't exist or access is denied.
         """
@@ -243,7 +312,7 @@ class PowerPlatformFetcher:
             for sc in resp.json().get("value", []):
                 sol = sc.get("solutionid") or {}
                 out.append({
-                    "bot_id": sc.get("objectid", ""),
+                    "agent_id": sc.get("objectid", ""),
                     "solution_id": sc.get("_solutionid_value", ""),
                     "solution_name": sol.get("friendlyname", ""),
                     "solution_unique": sol.get("uniquename", ""),
@@ -254,9 +323,9 @@ class PowerPlatformFetcher:
         except Exception:
             return []
 
-    def fetch_bot_solutions(self) -> list[dict]:
-        """Fetch bot solutions from the configured Dataverse URL (single-environment wrapper)."""
-        return self.fetch_bot_solutions_from(self._dataverse_url)
+    def fetch_agent_solutions(self) -> list[dict]:
+        """Fetch agent solutions from the configured Dataverse URL (single-environment wrapper)."""
+        return self.fetch_agent_solutions_from(self._dataverse_url)
 
     # ------------------------------------------------------------------
     # DLP Policies (Power Platform Admin API)
@@ -295,30 +364,33 @@ class PowerPlatformFetcher:
             pass
 
         # Fall back to BAP Admin API
-        resp = requests.get(
-            f"{_BAP_BASE}/providers/Microsoft.BusinessAppPlatform/scopes/admin/apiPolicies",
-            headers=self._bap_headers(),
-            params={"api-version": "2021-04-01"},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        out = []
-        for p in resp.json().get("value", []):
-            props = p.get("properties", {})
-            groups = props.get("connectorGroups", [])
-            out.append({
-                "policy_id": p.get("name", ""),
-                "display_name": props.get("displayName", ""),
-                "environment_type": props.get("environmentType", ""),
-                "created_by": (props.get("createdBy", {}) or {}).get("displayName", ""),
-                "created_at": props.get("createdTime", ""),
-                "modified_at": props.get("lastModifiedTime", ""),
-                "enforcement_mode": props.get("etag", ""),
-                "blocked_connectors": _connector_names(groups, "Blocked"),
-                "business_connectors": _connector_names(groups, "Business"),
-                "non_business_connectors": _connector_names(groups, "NonBusiness"),
-            })
-        return out
+        try:
+            resp = requests.get(
+                f"{_BAP_BASE}/providers/Microsoft.BusinessAppPlatform/scopes/admin/apiPolicies",
+                headers=self._bap_headers(),
+                params={"api-version": "2021-04-01"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            out = []
+            for p in resp.json().get("value", []):
+                props = p.get("properties", {})
+                groups = props.get("connectorGroups", [])
+                out.append({
+                    "policy_id": p.get("name", ""),
+                    "display_name": props.get("displayName", ""),
+                    "environment_type": props.get("environmentType", ""),
+                    "created_by": (props.get("createdBy", {}) or {}).get("displayName", ""),
+                    "created_at": props.get("createdTime", ""),
+                    "modified_at": props.get("lastModifiedTime", ""),
+                    "enforcement_mode": props.get("etag", ""),
+                    "blocked_connectors": _connector_names(groups, "Blocked"),
+                    "business_connectors": _connector_names(groups, "Business"),
+                    "non_business_connectors": _connector_names(groups, "NonBusiness"),
+                })
+            return out
+        except Exception:
+            return []
 
 
 def _connector_names(groups: list, classification: str) -> str:
