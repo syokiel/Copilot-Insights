@@ -52,6 +52,9 @@ class Settings:
     # When set, only these environments are iterated (useful in large tenants).
     # Leave blank to iterate all discovered environments.
     agent_env_ids: set = None  # populated in __post_init__
+    # Optional: total Copilot license count for activation rate KPI.
+    # Not derivable from usage data — set from your admin centre licence count.
+    total_licenses: int = 0
     # MCP server (HTTP deployment)
     mcp_tenant_id: str = ""
     mcp_app_id_uri: str = ""
@@ -80,6 +83,7 @@ class Settings:
         self.powerplatform_environment_id = os.getenv("POWERPLATFORM_ENVIRONMENT_ID", self.powerplatform_environment_id)
         raw_ids = os.getenv("POWERPLATFORM_AGENT_ENV_IDS", "")
         self.agent_env_ids = {i.strip() for i in raw_ids.split(",") if i.strip()} if raw_ids else set()
+        self.total_licenses = int(os.getenv("TOTAL_LICENSES", str(self.total_licenses)))
         self.mcp_tenant_id = os.getenv("MCP_TENANT_ID", self.mcp_tenant_id)
         self.mcp_app_id_uri = os.getenv("MCP_APP_ID_URI", self.mcp_app_id_uri)
         self.mcp_api_key = os.getenv("MCP_API_KEY", self.mcp_api_key)

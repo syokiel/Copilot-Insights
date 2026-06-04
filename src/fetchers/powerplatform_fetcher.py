@@ -1,5 +1,43 @@
+import json
+
 import requests
 from azure.core.credentials import TokenCredential
+
+
+def _parse_ai_model(configuration: str) -> str:
+    """Extract the AI model name from a Copilot Studio bot configuration JSON blob.
+
+    Copilot Studio serialises AI model settings differently across versions, so
+    we walk several known key paths and return the first non-empty string found.
+    If nothing matches the raw JSON is returned truncated so it's inspectable.
+    """
+    if not configuration:
+        return ""
+    try:
+        cfg = json.loads(configuration)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+    # Candidate paths — checked in order of specificity
+    candidates = [
+        # V3 / Studio 2024+
+        cfg.get("DefaultAIModel"),
+        # Nested under generative AI section
+        (cfg.get("generativeAI") or {}).get("modelId"),
+        (cfg.get("AICopilotConfig") or {}).get("ModelId"),
+        (cfg.get("AICopilotConfig") or {}).get("modelId"),
+        # Flat keys
+        cfg.get("aiModel"),
+        cfg.get("ModelId"),
+        cfg.get("modelId"),
+        cfg.get("model"),
+        cfg.get("AIType"),
+    ]
+    for val in candidates:
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
 
 _PP_API_BASE = "https://api.powerplatform.com"
 _PP_SCOPE = "https://api.powerplatform.com/.default"
@@ -72,7 +110,7 @@ class PowerPlatformFetcher:
         resp = requests.get(
             f"{dv_url}/api/data/v9.2/bots",
             headers=headers,
-            params={"$select": "botid,name,schemaname,createdon,modifiedon,publishedon"},
+            params={"$select": "botid,name,schemaname,createdon,modifiedon,publishedon,configuration"},
             timeout=30,
         )
         resp.raise_for_status()
@@ -85,6 +123,7 @@ class PowerPlatformFetcher:
                 "createdDateTime": b.get("createdon", ""),
                 "modifiedDateTime": b.get("modifiedon", ""),
                 "publishedDateTime": b.get("publishedon", ""),
+                "aiModel": _parse_ai_model(b.get("configuration") or ""),
             }
             for b in resp.json().get("value", [])
         ]

@@ -210,6 +210,17 @@ def cmd_sync() -> str:
             print(f"  WARNING: {label} fetch failed: {e}")
     viva_store.close()
 
+    print("Computing KPI snapshot...")
+    kpi_store = SqliteStore(settings.db_path)
+    try:
+        snap = kpi_store.compute_kpi_snapshot(settings.lookback_days, settings.total_licenses)
+        kpi_store.upsert_kpi_snapshot(snap)
+        print(f"  KPI snapshot saved ({snap['snapshot_date'][:10]})")
+    except Exception as e:
+        print(f"  WARNING: KPI snapshot failed: {e}")
+    finally:
+        kpi_store.close()
+
     if settings.azure_storage_account:
         from src.store.blob_store import upload_db
         upload_db(
@@ -234,6 +245,7 @@ def cmd_export(run_id: str) -> None:
     agent_solutions = store.fetch_agent_solutions()
     aad_users = store.fetch_aad_users()
     model_calls = store.fetch_gen_ai_model_calls()
+    kpi_snapshots = store.fetch_kpi_snapshots()
     az_dep_failures = store.fetch_az_dependency_failures()
     az_exceptions = store.fetch_az_exceptions()
     az_alerts = store.fetch_az_alerts()
@@ -264,7 +276,8 @@ def cmd_export(run_id: str) -> None:
                    agent_solutions=agent_solutions, aad_users=aad_users,
                    model_calls=model_calls,
                    health_detail=health_detail, crossref_summary=crossref_summary,
-                   copilot_usage=copilot_usage, teams_usage=teams_usage)
+                   copilot_usage=copilot_usage, teams_usage=teams_usage,
+                   kpi_snapshots=kpi_snapshots)
 
 
 def main() -> None:

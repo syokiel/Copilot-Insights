@@ -11,6 +11,7 @@ from src.writers import (
     sheet_dlp,
     sheet_environments,
     sheet_invocations,
+    sheet_kpi_history,
     sheet_m365_copilot,
     sheet_publishers,
     sheet_summary,
@@ -33,11 +34,14 @@ def build_workbook(
     crossref_summary: list[dict] | None = None,
     copilot_usage: list[dict] | None = None,
     teams_usage: list[dict] | None = None,
+    kpi_snapshots: list[dict] | None = None,
 ) -> None:
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    sheet_summary.write(wb.create_sheet("Summary"), events, connector_calls, model_calls or [])
+    latest_kpi = kpi_snapshots[0] if kpi_snapshots else None
+    sheet_kpi_history.write(wb.create_sheet("KPI History"), kpi_snapshots or [])
+    sheet_summary.write(wb.create_sheet("Summary"), events, connector_calls, model_calls or [], kpi_snapshot=latest_kpi)
     sheet_invocations.write(wb.create_sheet("Invocations"), events, connector_calls)
     sheet_connectors.write(wb.create_sheet("Connectors"), connector_calls)
     sheet_ai_usage.write(wb.create_sheet("AI_Model_Calls"), model_calls or [])

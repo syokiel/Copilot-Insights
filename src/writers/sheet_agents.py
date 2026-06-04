@@ -11,6 +11,7 @@ _OWNER_NOT_FOUND = (
 HEADERS = [
     "Agent ID",
     "Agent Name",
+    "AI Model",
     "Environment ID",
     "Environment Name",
     "Created Date",
@@ -61,16 +62,17 @@ def write(
 
             ws.cell(row=row_idx, column=1, value=agent_id)
             ws.cell(row=row_idx, column=2, value=agent.get("display_name") or agent.get("name", ""))
-            ws.cell(row=row_idx, column=3, value=env_id)
-            ws.cell(row=row_idx, column=4, value=env_by_id.get(env_id, ""))
-            ws.cell(row=row_idx, column=5, value=agent.get("created_at") or agent.get("createdDateTime", ""))
-            ws.cell(row=row_idx, column=6, value=agent.get("modified_at") or agent.get("modifiedDateTime", ""))
-            ws.cell(row=row_idx, column=7, value="Yes" if published else "No")
-            ws.cell(row=row_idx, column=8, value=agent.get("created_by", ""))
-            ws.cell(row=row_idx, column=9, value=owner_display)
-            ws.cell(row=row_idx, column=10, value=agent.get("created_in", ""))
-            ws.cell(row=row_idx, column=11, value=sol.get("solution_name", ""))
-            ws.cell(row=row_idx, column=12, value=sol.get("version", ""))
-            ws.cell(row=row_idx, column=13, value="Yes" if sol.get("is_managed") else ("No" if sol else ""))
+            ws.cell(row=row_idx, column=3, value=agent.get("ai_model", ""))
+            ws.cell(row=row_idx, column=4, value=env_id)
+            ws.cell(row=row_idx, column=5, value=env_by_id.get(env_id, ""))
+            ws.cell(row=row_idx, column=6, value=agent.get("created_at") or agent.get("createdDateTime", ""))
+            ws.cell(row=row_idx, column=7, value=agent.get("modified_at") or agent.get("modifiedDateTime", ""))
+            ws.cell(row=row_idx, column=8, value="Yes" if published else "No")
+            ws.cell(row=row_idx, column=9, value=agent.get("created_by", ""))
+            ws.cell(row=row_idx, column=10, value=owner_display)
+            ws.cell(row=row_idx, column=11, value=agent.get("created_in", ""))
+            ws.cell(row=row_idx, column=12, value=sol.get("solution_name", ""))
+            ws.cell(row=row_idx, column=13, value=sol.get("version", ""))
+            ws.cell(row=row_idx, column=14, value="Yes" if sol.get("is_managed") else ("No" if sol else ""))
 
     autofit_columns(ws, HEADERS)

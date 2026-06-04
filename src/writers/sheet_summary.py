@@ -7,7 +7,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from src.writers._style import HEADER_FILL, HEADER_FONT, LEFT, autofit_columns
 
 
-def write(ws: Worksheet, events: list[dict], connector_calls: list[dict], model_calls: list[dict] = []) -> None:
+def write(ws: Worksheet, events: list[dict], connector_calls: list[dict], model_calls: list[dict] = [], kpi_snapshot: dict | None = None) -> None:
     prod_events = [e for e in events if not e.get("DesignMode")]
     prod_connectors = [c for c in connector_calls if not c.get("DesignMode")]
 
@@ -76,6 +76,32 @@ def write(ws: Worksheet, events: list[dict], connector_calls: list[dict], model_
                 rows.append((f"  {model}", count))
     else:
         rows.append(("  No AI model call data in this window", None))
+
+    if kpi_snapshot:
+        pct = lambda v: f"{v:.1f}%" if v is not None else "—"  # noqa: E731
+        rows += [
+            (None, None),
+            ("── M365 Copilot KPIs ─────────────────────────", None),
+            ("Total Licenses",       kpi_snapshot.get("total_licenses") or "—"),
+            ("Enabled Users",        kpi_snapshot.get("enabled_users")),
+            ("Active Users",         kpi_snapshot.get("active_users")),
+            ("Activation Rate",      pct(kpi_snapshot.get("activation_rate"))),
+            ("Adoption Rate",        pct(kpi_snapshot.get("adoption_rate"))),
+            ("Power Users",          kpi_snapshot.get("power_users")),
+            ("Total Prompts",        kpi_snapshot.get("total_prompts")),
+            ("Avg Prompts / User",   kpi_snapshot.get("avg_prompts_per_user")),
+            (None, None),
+            ("── Agent KPIs ────────────────────────────────", None),
+            ("Total Agents",         kpi_snapshot.get("total_agents")),
+            ("Active Agents",        kpi_snapshot.get("active_agents")),
+            ("Utilization Rate",     pct(kpi_snapshot.get("utilization_rate"))),
+            ("Production Agents",    kpi_snapshot.get("production_agents")),
+            ("Non-Prod Agents",      kpi_snapshot.get("non_prod_agents")),
+            ("Ownership Coverage",   pct(kpi_snapshot.get("ownership_pct"))),
+            ("Total Conversations",  kpi_snapshot.get("total_conversations")),
+            ("Agent Adopters",       kpi_snapshot.get("agent_adopters")),
+            ("Agent Adoption %",     pct(kpi_snapshot.get("agent_adoption_pct"))),
+        ]
 
     headers = ["Metric", "Value"]
     ws.column_dimensions["A"].width = 48

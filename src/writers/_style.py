@@ -1,4 +1,5 @@
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 HEADER_FILL = PatternFill("solid", fgColor="1F4E79")
@@ -32,7 +33,7 @@ def apply_row_style(ws: Worksheet, row: int, col_count: int) -> None:
 
 def autofit_columns(ws: Worksheet, headers: list[str], max_width: int = 50) -> None:
     for col, header in enumerate(headers, 1):
-        col_letter = ws.cell(row=1, column=col).column_letter
+        col_letter = get_column_letter(col)
         max_len = len(header)
         for row in ws.iter_rows(min_row=2, min_col=col, max_col=col):
             for cell in row:
