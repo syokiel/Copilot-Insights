@@ -32,7 +32,7 @@ LOCATION="eastus"
 # Globally-unique suffix appended to ACR and Storage names (1-8 lowercase alphanumeric).
 # ACR name will be:     agenttelemcp<SUFFIX>
 # Storage name will be: agenttelemcp<SUFFIX>
-ACR_SUFFIX="mwc1"
+ACR_SUFFIX="yoursfx"
 
 # Application Insights connection string — output of Phase 1.
 APP_INSIGHTS_CONN="InstrumentationKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

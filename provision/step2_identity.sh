@@ -37,7 +37,7 @@ TENANT_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 # Client secret — required for live API validation tests in Part 2.
 # Leave blank to skip live tests and only validate configuration.
-CLIENT_SECRET="REDACTED"
+CLIENT_SECRET=""
 
 # Dataverse org URL — used to test Dynamics CRM / Power Platform access.
 # From your .env: DATAVERSE_URL

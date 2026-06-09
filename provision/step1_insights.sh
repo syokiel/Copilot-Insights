@@ -16,7 +16,7 @@ set -euo pipefail
 
 # ── CONFIG — fill in before running ──────────────────────────────────────────
 SUBSCRIPTION_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-RG="your-resource-group"            # Existing resource group name
+RG="your-resource-group"     # Existing resource group name
 LOCATION="eastus"        # Azure region, e.g. eastus
 # ─────────────────────────────────────────────────────────────────────────────
 

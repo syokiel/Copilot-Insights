@@ -13,8 +13,8 @@ set -euo pipefail
 # ── CONFIG — fill in before running ──────────────────────────────────────────
 SUBSCRIPTION_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 RG="your-resource-group"
-ACR="agenttelemetrymwccr"
-STORAGE="stagenttelemetrymwc"
+ACR="agenttelemcp<your-suffix>cr"
+STORAGE="stagenttelemcp<your-suffix>"
 # ─────────────────────────────────────────────────────────────────────────────
 
 ts() { date "+%H:%M:%S"; }
