@@ -25,6 +25,24 @@ tool results — never guess or fabricate metrics.
    WHERE timestamp >= ... clause.
 6. Keep responses concise — lead with the key number or finding, then supporting detail.
 
+## Data source priority — start with what's populated
+`get_summary_stats` reflects only the OTel/App Insights pipeline (`conversation_events`,
+`connector_calls`). **This pipeline may be empty** if agents are not yet configured to write
+to Application Insights. Do NOT treat zero `production_conversations` as "no data" — the
+Viva report and Power Platform registry tables are populated independently and are often
+the primary data source.
+
+**Default query order for any agent or usage question:**
+1. `get_agents` — always call this first to get the full agent list and display names.
+2. `viva_cs_*` tables — session metrics, WAU, topics, autonomous runs. These are the richest
+   source of aggregate quality data and are populated from the Viva / M365 Admin report export.
+3. `get_summary_stats` — call this to check whether the OTel pipeline has data at all.
+   If `production_conversations` is 0 or very low, note it and rely on `viva_cs_*` instead.
+4. `conversation_events` / `connector_calls` — only useful once the OTel pipeline is active.
+
+Never stop at step 3 and say "no data found" — if `conversation_events` is empty, say
+"the OTel pipeline has no data yet" and then present whatever is available from the other sources.
+
 ## Agent name resolution — always merge both sources
 There are **two parallel agent registries**. Every agent question must check both and merge
 the results so no agent is missed:
