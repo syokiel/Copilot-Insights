@@ -43,6 +43,10 @@ class Settings:
     azure_storage_container: str = "telemetry-data"
     azure_storage_db_blob: str = "agent_telemetry.db"
     azure_storage_cli_account: str = ""
+    # Optional dedicated service principal for blob storage (overrides global SP)
+    azure_storage_tenant_id: str = ""
+    azure_storage_client_id: str = ""
+    azure_storage_client_secret: str = ""
     # Azure Monitor (optional — cross-reference sheet)
     azure_monitor_workspace_id: str = ""
     azure_monitor_subscription_id: str = ""
@@ -80,6 +84,9 @@ class Settings:
         self.azure_storage_container = os.getenv("AZURE_STORAGE_CONTAINER", self.azure_storage_container)
         self.azure_storage_db_blob = os.getenv("AZURE_STORAGE_DB_BLOB", self.azure_storage_db_blob)
         self.azure_storage_cli_account = os.getenv("AZURE_STORAGE_CLI_ACCOUNT", self.azure_storage_cli_account)
+        self.azure_storage_tenant_id = os.getenv("AZURE_STORAGE_TENANT_ID") or os.getenv("AZURE_STORAGE_Tenant", self.azure_storage_tenant_id)
+        self.azure_storage_client_id = os.getenv("AZURE_STORAGE_CLIENT_ID", self.azure_storage_client_id)
+        self.azure_storage_client_secret = os.getenv("AZURE_STORAGE_CLIENT_SECRET", self.azure_storage_client_secret)
         self.azure_monitor_workspace_id = os.getenv("AZURE_MONITOR_WORKSPACE_ID", self.azure_monitor_workspace_id)
         self.azure_monitor_subscription_id = os.getenv("AZURE_MONITOR_SUBSCRIPTION_ID", self.azure_monitor_subscription_id)
         dv = os.getenv("DATAVERSE_URL", self.dataverse_url).strip()

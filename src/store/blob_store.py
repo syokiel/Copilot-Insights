@@ -23,18 +23,26 @@ def _blob_client(account: str, container: str, blob: str, use_managed_identity: 
         credential = ManagedIdentityCredential()
     else:
         from config.settings import settings
-        if settings.azure_client_id and settings.azure_client_secret:
+        # Prefer dedicated storage SP, then fall back to global SP, then CLI
+        storage_tenant = settings.azure_storage_tenant_id or settings.azure_tenant_id
+        if settings.azure_storage_client_id and settings.azure_storage_client_secret:
             credential = ClientSecretCredential(
-                tenant_id=settings.azure_tenant_id,
+                tenant_id=storage_tenant,
+                client_id=settings.azure_storage_client_id,
+                client_secret=settings.azure_storage_client_secret,
+            )
+        elif settings.azure_client_id and settings.azure_client_secret:
+            credential = ClientSecretCredential(
+                tenant_id=storage_tenant,
                 client_id=settings.azure_client_id,
                 client_secret=settings.azure_client_secret,
             )
         else:
             cli_account = settings.azure_storage_cli_account or None
             credential = ChainedTokenCredential(
-                AzureCliCredential(tenant_id=settings.azure_tenant_id or None),
+                AzureCliCredential(tenant_id=storage_tenant or None),
                 InteractiveBrowserCredential(
-                    tenant_id=settings.azure_tenant_id or None,
+                    tenant_id=storage_tenant or None,
                     login_hint=cli_account,
                 ),
             )
