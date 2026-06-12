@@ -486,9 +486,10 @@ def cmd_export(run_id: str) -> None:
     m365_app_users                = store.fetch_m365_app_users()
     viva_reports_copilot_adoption = store.fetch_viva_reports_copilot_adoption()
     viva_reports_copilot_impact   = store.fetch_viva_reports_copilot_impact()
-    m365_admin_agent_inventory    = store.fetch_m365_admin_agent_inventory()
-    m365_usage_agents             = store.fetch_m365_usage_agents()
-    m365_usage_agent_users        = store.fetch_m365_usage_agent_users()
+    m365_admin_agent_inventory          = store.fetch_m365_admin_agent_inventory()
+    m365_usage_agents                   = store.fetch_m365_usage_agents()
+    m365_usage_agent_users              = store.fetch_m365_usage_agent_users()
+    viva_reports_cs_action_metrics      = store.fetch_viva_reports_cs_action_metrics()
     store.close()
 
     health_detail, crossref_summary = build_crossref(
@@ -540,6 +541,7 @@ def cmd_export(run_id: str) -> None:
         m365_admin_agent_inventory=m365_admin_agent_inventory,
         m365_usage_agents=m365_usage_agents,
         m365_usage_agent_users=m365_usage_agent_users,
+        viva_reports_cs_action_metrics=viva_reports_cs_action_metrics,
     )
 
 

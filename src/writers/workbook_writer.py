@@ -30,6 +30,7 @@ from src.writers import (
     sheet_viva_topics,
     sheet_viva_wau,
     sheet_viva_autonomous,
+    sheet_xla,
 )
 
 
@@ -65,11 +66,24 @@ def build_workbook(
     m365_admin_agent_inventory: list[dict] | None = None,
     m365_usage_agents: list[dict] | None = None,
     m365_usage_agent_users: list[dict] | None = None,
+    viva_reports_cs_action_metrics: list[dict] | None = None,
 ) -> None:
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
+    def _if(name: str, write_fn, *args):
+        """Create the sheet only when at least one data arg is non-empty."""
+        has_data = any(
+            (isinstance(a, (list, tuple)) and len(a) > 0) or
+            (isinstance(a, dict) and len(a) > 0)
+            for a in args
+        )
+        if has_data:
+            write_fn(wb.create_sheet(name), *args)
+
     latest_kpi = kpi_snapshots[0] if kpi_snapshots else None
+
+    # Always-present sheets (summary / history depend on all data)
     sheet_kpi_history.write(wb.create_sheet("KPI History"), kpi_snapshots or [])
     sheet_summary.write(
         wb.create_sheet("Summary"), events, connector_calls, model_calls or [],
@@ -79,32 +93,46 @@ def build_workbook(
         viva_reports_cs_autonomous=viva_reports_cs_autonomous_metrics or [],
         viva_reports_cs_agents=viva_reports_cs_copilot_agents or {},
     )
-    sheet_invocations.write(wb.create_sheet("Invocations"), events, connector_calls)
-    sheet_connectors.write(wb.create_sheet("Connectors"), connector_calls)
-    sheet_ai_usage.write(wb.create_sheet("AI_Model_Calls"), model_calls or [])
-    sheet_agents.write(wb.create_sheet("Agents"), agents or [], environments or [], agent_solutions or [], aad_users or {})
-    sheet_environments.write(wb.create_sheet("Environments"), environments or [])
-    sheet_publishers.write(wb.create_sheet("Publishers"), publishers or [])
-    sheet_dlp.write(wb.create_sheet("DLP Policies"), dlp_policies or [])
-    sheet_m365_copilot.write(wb.create_sheet("M365_Copilot_Usage"), copilot_usage or [])
-    sheet_m365_copilot_trend.write(wb.create_sheet("M365_Copilot_Trend"),
-                                   copilot_count_summary or [], copilot_count_trend or [])
-    sheet_m365_packages.write(wb.create_sheet("M365_Copilot_Packages"), copilot_packages or [])
-    sheet_m365_o365_users.write(wb.create_sheet("M365_O365_Users"), o365_active_users or [])
-    sheet_m365_app_users.write(wb.create_sheet("M365_App_Users"), m365_app_users or [])
-    sheet_teams_usage.write(wb.create_sheet("Teams_Usage"), teams_usage or [])
-    sheet_viva.write(wb.create_sheet("Viva_Person_Insights"), viva_person_insights or [], aad_users or {})
-    sheet_viva_sessions.write(wb.create_sheet("Viva_CS_Sessions"), viva_reports_cs_session_metrics or [], viva_reports_cs_copilot_agents or {})
-    sheet_viva_topics.write(wb.create_sheet("Viva_CS_Topics"), viva_reports_cs_topic_metrics or [], viva_reports_cs_copilot_agents or {})
-    sheet_viva_wau.write(wb.create_sheet("Viva_CS_WAU"), viva_reports_cs_weekly_active_users or [], viva_reports_cs_copilot_agents or {})
-    sheet_viva_autonomous.write(wb.create_sheet("Viva_CS_Autonomous"), viva_reports_cs_autonomous_metrics or [], viva_reports_cs_copilot_agents or {})
-    sheet_viva_adoption.write(wb.create_sheet("Viva_Copilot_Adoption"), viva_reports_copilot_adoption or [])
-    sheet_viva_impact.write(wb.create_sheet("Viva_Copilot_Impact"), viva_reports_copilot_impact or [])
-    sheet_m365_admin_inventory.write(wb.create_sheet("M365_Agent_Inventory"), m365_admin_agent_inventory or [])
-    sheet_m365_usage_agents.write(wb.create_sheet("M365_Usage_Agents"), m365_usage_agents or [])
-    sheet_m365_usage_agent_users.write(wb.create_sheet("M365_Usage_AgentUsers"), m365_usage_agent_users or [])
-    sheet_az_health.write(wb.create_sheet("AzureMonitor_Health"), health_detail or [])
-    sheet_crossref.write(wb.create_sheet("CrossRef_Summary"), crossref_summary or [])
+
+    # XLA Scorecard — only when there's session data to compute from
+    _xla_sess = viva_reports_cs_session_metrics or []
+    if _xla_sess:
+        sheet_xla.write(
+            wb.create_sheet("XLA_Measurements"),
+            session_metrics=_xla_sess,
+            autonomous_metrics=viva_reports_cs_autonomous_metrics or [],
+            action_metrics=viva_reports_cs_action_metrics or [],
+            wau=viva_reports_cs_weekly_active_users or [],
+            adoption=viva_reports_copilot_adoption or [],
+            kpi_snapshot=latest_kpi,
+            agents=viva_reports_cs_copilot_agents or {},
+        )
+
+    _if("Invocations",           sheet_invocations.write,         events, connector_calls)
+    _if("Connectors",            sheet_connectors.write,           connector_calls)
+    _if("AI_Model_Calls",        sheet_ai_usage.write,             model_calls or [])
+    _if("Agents",                sheet_agents.write,               agents or [], environments or [], agent_solutions or [], aad_users or {})
+    _if("Environments",          sheet_environments.write,         environments or [])
+    _if("Publishers",            sheet_publishers.write,           publishers or [])
+    _if("DLP Policies",          sheet_dlp.write,                  dlp_policies or [])
+    _if("M365_Copilot_Usage",    sheet_m365_copilot.write,         copilot_usage or [])
+    _if("M365_Copilot_Trend",    sheet_m365_copilot_trend.write,   copilot_count_summary or [], copilot_count_trend or [])
+    _if("M365_Copilot_Packages", sheet_m365_packages.write,        copilot_packages or [])
+    _if("M365_O365_Users",       sheet_m365_o365_users.write,      o365_active_users or [])
+    _if("M365_App_Users",        sheet_m365_app_users.write,       m365_app_users or [])
+    _if("Teams_Usage",           sheet_teams_usage.write,          teams_usage or [])
+    _if("Viva_Person_Insights",  sheet_viva.write,                 viva_person_insights or [], aad_users or {})
+    _if("Viva_CS_Sessions",      sheet_viva_sessions.write,        viva_reports_cs_session_metrics or [], viva_reports_cs_copilot_agents or {})
+    _if("Viva_CS_Topics",        sheet_viva_topics.write,          viva_reports_cs_topic_metrics or [], viva_reports_cs_copilot_agents or {})
+    _if("Viva_CS_WAU",           sheet_viva_wau.write,             viva_reports_cs_weekly_active_users or [], viva_reports_cs_copilot_agents or {})
+    _if("Viva_CS_Autonomous",    sheet_viva_autonomous.write,      viva_reports_cs_autonomous_metrics or [], viva_reports_cs_copilot_agents or {})
+    _if("Viva_Copilot_Adoption", sheet_viva_adoption.write,        viva_reports_copilot_adoption or [])
+    _if("Viva_Copilot_Impact",   sheet_viva_impact.write,          viva_reports_copilot_impact or [])
+    _if("M365_Agent_Inventory",  sheet_m365_admin_inventory.write, m365_admin_agent_inventory or [])
+    _if("M365_Usage_Agents",     sheet_m365_usage_agents.write,    m365_usage_agents or [])
+    _if("M365_Usage_AgentUsers", sheet_m365_usage_agent_users.write, m365_usage_agent_users or [])
+    _if("AzureMonitor_Health",   sheet_az_health.write,            health_detail or [])
+    _if("CrossRef_Summary",      sheet_crossref.write,             crossref_summary or [])
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
