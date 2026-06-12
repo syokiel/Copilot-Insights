@@ -61,9 +61,17 @@ class Settings:
     # Not derivable from usage data — set from your admin centre licence count.
     total_licenses: int = 0
     # Viva CS (Copilot Studio) analytics CSV export folder.
-    # Set VIVA_CS_REPORT_DIR to the folder containing the exported CSVs and
-    # they will be imported automatically on every sync/all run.
-    viva_cs_report_dir: str = ""
+    # Set VIVA_REPORT_CS_DIR (or VIVA_REPROT_CS_DIR) to the folder containing
+    # the agent CSV exports — imported automatically on every sync/all run.
+    viva_reports_cs_report_dir: str = ""
+    # Direct file paths for Copilot Adoption and Impact reports.
+    viva_report_adoption: str = ""
+    viva_report_impact: str = ""
+    # M365 Admin Center CSV exports
+    m365_admin_agent_inventory: str = ""
+    # M365 Usage reports
+    m365_usage_report_agents: str = ""
+    m365_usage_report_agent_users: str = ""
     # MCP server (HTTP deployment)
     mcp_tenant_id: str = ""
     mcp_app_id_uri: str = ""
@@ -100,7 +108,22 @@ class Settings:
         )
         self.agent_env_ids = {i.strip() for i in raw_ids.split(",") if i.strip()} if raw_ids else set()
         self.total_licenses = int(os.getenv("TOTAL_LICENSES", str(self.total_licenses)))
-        self.viva_cs_report_dir = os.getenv("VIVA_CS_REPORT_DIR", self.viva_cs_report_dir).strip()
+        self.viva_reports_cs_report_dir = (
+            os.getenv("VIVA_REPORT_CS_DIR") or
+            os.getenv("VIVA_REPROT_CS_DIR") or   # accept common typo
+            os.getenv("VIVA_CS_REPORT_DIR", self.viva_reports_cs_report_dir)
+        ).strip()
+        self.viva_report_adoption = os.getenv("VIVA_REPORT_ADOPTION", self.viva_report_adoption).strip()
+        self.viva_report_impact   = os.getenv("VIVA_REPORT_IMPACT",   self.viva_report_impact).strip()
+        self.m365_admin_agent_inventory   = os.getenv("M365ADMIN_AGENT_INVENTORY",   self.m365_admin_agent_inventory).strip()
+        self.m365_usage_report_agents     = (
+            os.getenv("M365USAGE_REPORT_Agents") or
+            os.getenv("M365Usage_REPORT_Agents", self.m365_usage_report_agents)
+        ).strip()
+        self.m365_usage_report_agent_users = (
+            os.getenv("M365USAGE_REPORT_AgentUser") or
+            os.getenv("M365Usage_REPORT_AgentUser", self.m365_usage_report_agent_users)
+        ).strip()
         self.mcp_tenant_id = os.getenv("MCP_TENANT_ID", self.mcp_tenant_id)
         self.mcp_app_id_uri = os.getenv("MCP_APP_ID_URI", self.mcp_app_id_uri)
         self.mcp_api_key = os.getenv("MCP_API_KEY", self.mcp_api_key)

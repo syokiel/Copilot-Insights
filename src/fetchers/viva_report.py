@@ -14,6 +14,8 @@ Supported files (resolved case-insensitively from the given directory):
   CopilotAgent.Csv
   AgentWeeklyActiveUsers.Csv
   AgentExtendedMetadata.Csv
+  Copilot Adoption Report*.Csv
+  Copilot Impact*.Csv
 """
 import csv
 import re
@@ -73,6 +75,12 @@ class VivaReportImporter:
         'extended':           'AgentExtendedMetadata.Csv',
     }
 
+    # Files matched by prefix (case-insensitive) — first match wins
+    _PREFIX_FILES = {
+        'adoption': 'copilot adoption report',
+        'impact':   'copilot impact',
+    }
+
     def __init__(self, report_dir: str) -> None:
         self._dir = Path(report_dir)
 
@@ -101,6 +109,23 @@ class VivaReportImporter:
         if p is None:
             return []
 
+        with open(p, newline='', encoding='utf-8-sig') as fh:
+            return list(csv.DictReader(fh))
+
+    def _read_prefix(self, key: str) -> list[dict]:
+        """Find a CSV whose filename starts with the given prefix (case-insensitive)."""
+        prefix = self._PREFIX_FILES[key].lower()
+        for entry in self._dir.rglob('*'):
+            if entry.is_file() and entry.name.lower().startswith(prefix) and entry.suffix.lower() == '.csv':
+                with open(entry, newline='', encoding='utf-8-sig') as fh:
+                    return list(csv.DictReader(fh))
+        return []
+
+    @staticmethod
+    def _read_path(path: str) -> list[dict]:
+        p = Path(path)
+        if not p.exists():
+            return []
         with open(p, newline='', encoding='utf-8-sig') as fh:
             return list(csv.DictReader(fh))
 
@@ -286,5 +311,117 @@ class VivaReportImporter:
                 'agent_id':          r.get('AgentId', ''),
                 'aad_tenant_id':     r.get('AadTenantId', ''),
                 'roi_configuration': r.get('RoiConfiguration', ''),
+            })
+        return out
+
+    # ── Copilot Adoption Report ───────────────────────────────────────────────
+
+    def fetch_copilot_adoption(self, file_path: str = "") -> list[dict]:
+        out = []
+        rows = self._read_path(file_path) if file_path else self._read_prefix('adoption')
+        for r in rows:
+            out.append({
+                'person_id':                   r.get('PersonId', ''),
+                'metric_date':                 _norm_date(r.get('MetricDate', '')),
+                'organization':                r.get('Organization', ''),
+                'chat_work_outlook':           _int(r.get('Copilot Chat (work) prompts submitted in Outlook')),
+                'chat_work_teams':             _int(r.get('Copilot Chat (work) prompts submitted in Teams')),
+                'chat_web_teams':              _int(r.get('Copilot Chat (Web) prompts submitted in Teams')),
+                'chat_web_outlook':            _int(r.get('Copilot Chat (Web) prompts submitted in Outlook')),
+                'chat_web_prompts':            _int(r.get('Copilot Chat (web) prompts submitted')),
+                'chat_work_prompts':           _int(r.get('Copilot chat (work) prompts submitted')),
+                'word_work_prompts':           _int(r.get('Copilot Chat (work) in Word prompts submitted')),
+                'word_web_prompts':            _int(r.get('Copilot Chat (web) in Word prompts submitted')),
+                'excel_work_prompts':          _int(r.get('Copilot Chat (work) in Excel prompts submitted')),
+                'excel_web_prompts':           _int(r.get('Copilot Chat (web) in Excel prompts submitted')),
+                'ppt_work_prompts':            _int(r.get('Copilot Chat (work) in PowerPoint prompts submitted')),
+                'ppt_web_prompts':             _int(r.get('Copilot Chat (web) in PowerPoint prompts submitted')),
+                'word_chat_prompts':           _int(r.get('Chat (Copilot in Word) prompts submitted')),
+                'ppt_chat_prompts':            _int(r.get('Chat (Copilot in PowerPoint) prompts submitted')),
+                'excel_chat_prompts':          _int(r.get('Chat (Copilot in Excel) prompts submitted')),
+                'intelligent_recap_actions':   _int(r.get('Intelligent recap actions taken')),
+                'visualize_table_word':        _int(r.get('Visualize as table actions taken using Copilot in Word')),
+                'add_content_ppt':             _int(r.get('Add content to presentation actions taken')),
+                'draft_word_doc':              _int(r.get('Draft Word document actions taken using Copilot')),
+                'summarize_word_doc':          _int(r.get('Summarize Word document actions taken using Copilot in Word')),
+                'email_coaching':              _int(r.get('Email coaching actions taken using Copilot')),
+                'generate_email_draft':        _int(r.get('Generate email draft actions taken using Copilot in Outlook')),
+                'summarize_email_thread':      _int(r.get('Summarize email thread actions taken using Copilot in Outlook')),
+                'excel_analysis':              _int(r.get('Excel analysis actions taken using Copilot')),
+                'excel_formatting':            _int(r.get('Excel formatting actions taken using Copilot')),
+                'create_excel_formula':        _int(r.get('Create Excel formula actions taken using Copilot')),
+                'summarize_meeting_teams':     _int(r.get('Summarize meeting actions taken using Copilot in Teams')),
+                'summarize_ppt':               _int(r.get('Summarize presentation actions taken using Copilot in PowerPoint')),
+                'create_ppt':                  _int(r.get('Create presentation actions taken using Copilot')),
+                'rewrite_text_word':           _int(r.get('Rewrite text actions taken using Copilot in Word')),
+                'summarize_chat_teams':        _int(r.get('Summarize chat actions taken using Copilot in Teams')),
+                'compose_chat_teams':          _int(r.get('Compose chat message actions taken using Copilot in Teams')),
+                'total_copilot_actions':       _int(r.get('Total Copilot actions taken')),
+                'total_copilot_active_days':   _int(r.get('Total Copilot active days')),
+                'total_copilot_enabled_days':  _int(r.get('Total Copilot enabled days')),
+                'meeting_hours_summarized':    _float(r.get('Total Meeting hours summarized or recapped by Copilot')),
+                'actions_copilot_chat':        _int(r.get('Copilot actions taken in Copilot chat (work)')),
+                'actions_excel':               _int(r.get('Copilot actions taken in Excel')),
+                'actions_outlook':             _int(r.get('Copilot actions taken in Outlook')),
+                'actions_powerpoint':          _int(r.get('Copilot actions taken in Powerpoint')),
+                'actions_teams':               _int(r.get('Copilot actions taken in Teams')),
+                'actions_word':                _int(r.get('Copilot actions taken in Word')),
+            })
+        return out
+
+    # ── Copilot Impact Report ─────────────────────────────────────────────────
+
+    def fetch_copilot_impact(self, file_path: str = "") -> list[dict]:
+        out = []
+        rows = self._read_path(file_path) if file_path else self._read_prefix('impact')
+        for r in rows:
+            out.append({
+                'person_id':                      r.get('PersonId', ''),
+                'metric_date':                    _norm_date(r.get('MetricDate', '')),
+                'organization':                   r.get('Organization', ''),
+                'is_active':                      1 if str(r.get('IsActive', '')).upper() == 'TRUE' else 0,
+                'weekend_days':                   r.get('WeekendDays', ''),
+                'total_copilot_actions':          _int(r.get('Total Copilot actions taken')),
+                'total_copilot_active_days':      _int(r.get('Total Copilot active days')),
+                'total_copilot_enabled_days':     _int(r.get('Total Copilot enabled days')),
+                'intelligent_recap_actions':      _int(r.get('Intelligent recap actions taken')),
+                'chat_web_prompts':               _int(r.get('Copilot Chat (web) prompts submitted')),
+                'meeting_hours_summarized':       _float(r.get('Total Meeting hours summarized or recapped by Copilot')),
+                'meetings_summarized':            _int(r.get('Total meetings summarized or recapped by Copilot')),
+                'summarize_meeting_teams':        _int(r.get('Summarize meeting actions taken using Copilot in Teams')),
+                'summarize_chat_teams':           _int(r.get('Summarize chat actions taken using Copilot in Teams')),
+                'compose_chat_teams':             _int(r.get('Compose chat message actions taken using Copilot in Teams')),
+                'chat_conversations_summarized':  _int(r.get('Total chat conversations summarized by Copilot in Teams')),
+                'word_work_prompts':              _int(r.get('Copilot Chat (work) in Word prompts submitted')),
+                'word_web_prompts':               _int(r.get('Copilot Chat (web) in Word prompts submitted')),
+                'excel_work_prompts':             _int(r.get('Copilot Chat (work) in Excel prompts submitted')),
+                'excel_web_prompts':              _int(r.get('Copilot Chat (web) in Excel prompts submitted')),
+                'ppt_work_prompts':               _int(r.get('Copilot Chat (work) in PowerPoint prompts submitted')),
+                'ppt_web_prompts':                _int(r.get('Copilot Chat (web) in PowerPoint prompts submitted')),
+                'visualize_table_word':           _int(r.get('Visualize as table actions taken using Copilot in Word')),
+                'add_content_ppt':                _int(r.get('Add content to presentation actions taken')),
+                'organize_ppt':                   _int(r.get('Organize presentation actions taken')),
+                'chat_work_prompts':              _int(r.get('Copilot chat (work) prompts submitted')),
+                'summarize_email_thread':         _int(r.get('Summarize email thread actions taken using Copilot in Outlook')),
+                'email_coaching':                 _int(r.get('Email coaching actions taken using Copilot')),
+                'generate_email_draft':           _int(r.get('Generate email draft actions taken using Copilot in Outlook')),
+                'summarize_word_doc':             _int(r.get('Summarize Word document actions taken using Copilot in Word')),
+                'summarize_ppt':                  _int(r.get('Summarize presentation actions taken using Copilot in PowerPoint')),
+                'create_ppt':                     _int(r.get('Create presentation actions taken using Copilot')),
+                'rewrite_text_word':              _int(r.get('Rewrite text actions taken using Copilot in Word')),
+                'draft_word_doc':                 _int(r.get('Draft Word document actions taken using Copilot')),
+                'excel_analysis':                 _int(r.get('Excel analysis actions taken using Copilot')),
+                'create_excel_formula':           _int(r.get('Create Excel formula actions taken using Copilot')),
+                'excel_formatting':               _int(r.get('Excel formatting actions taken using Copilot')),
+                'emails_sent_with_copilot':       _int(r.get('Total emails sent using Copilot in Outlook')),
+                'attended_meetings':              _float(r.get('Attended meetings')),
+                'meetings':                       _float(r.get('Meetings')),
+                'meeting_hours':                  _float(r.get('Meeting hours')),
+                'uninterrupted_hours':            _float(r.get('Uninterrupted hours')),
+                'small_meeting_hours':            _float(r.get('Small meeting hours')),
+                'multitasking_hours':             _float(r.get('Multitasking hours')),
+                'conflicting_meeting_hours':      _float(r.get('Conflicting meeting hours')),
+                'chats_sent':                     _int(r.get('Chats sent')),
+                'emails_sent':                    _int(r.get('Emails sent')),
             })
         return out

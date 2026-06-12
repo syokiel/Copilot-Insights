@@ -45,11 +45,11 @@ def build_workbook(
     teams_usage: list[dict] | None = None,
     kpi_snapshots: list[dict] | None = None,
     viva_person_insights: list[dict] | None = None,
-    viva_cs_session_metrics: list[dict] | None = None,
-    viva_cs_topic_metrics: list[dict] | None = None,
-    viva_cs_weekly_active_users: list[dict] | None = None,
-    viva_cs_autonomous_metrics: list[dict] | None = None,
-    viva_cs_copilot_agents: dict[str, dict] | None = None,
+    viva_reports_cs_session_metrics: list[dict] | None = None,
+    viva_reports_cs_topic_metrics: list[dict] | None = None,
+    viva_reports_cs_weekly_active_users: list[dict] | None = None,
+    viva_reports_cs_autonomous_metrics: list[dict] | None = None,
+    viva_reports_cs_copilot_agents: dict[str, dict] | None = None,
     copilot_count_summary: list[dict] | None = None,
     copilot_count_trend: list[dict] | None = None,
     copilot_packages: list[dict] | None = None,
@@ -64,10 +64,10 @@ def build_workbook(
     sheet_summary.write(
         wb.create_sheet("Summary"), events, connector_calls, model_calls or [],
         kpi_snapshot=latest_kpi,
-        viva_cs_sessions=viva_cs_session_metrics or [],
-        viva_cs_wau=viva_cs_weekly_active_users or [],
-        viva_cs_autonomous=viva_cs_autonomous_metrics or [],
-        viva_cs_agents=viva_cs_copilot_agents or {},
+        viva_reports_cs_sessions=viva_reports_cs_session_metrics or [],
+        viva_reports_cs_wau=viva_reports_cs_weekly_active_users or [],
+        viva_reports_cs_autonomous=viva_reports_cs_autonomous_metrics or [],
+        viva_reports_cs_agents=viva_reports_cs_copilot_agents or {},
     )
     sheet_invocations.write(wb.create_sheet("Invocations"), events, connector_calls)
     sheet_connectors.write(wb.create_sheet("Connectors"), connector_calls)
@@ -84,10 +84,10 @@ def build_workbook(
     sheet_m365_app_users.write(wb.create_sheet("M365_App_Users"), m365_app_users or [])
     sheet_teams_usage.write(wb.create_sheet("Teams_Usage"), teams_usage or [])
     sheet_viva.write(wb.create_sheet("Viva_Person_Insights"), viva_person_insights or [], aad_users or {})
-    sheet_viva_sessions.write(wb.create_sheet("Viva_CS_Sessions"), viva_cs_session_metrics or [], viva_cs_copilot_agents or {})
-    sheet_viva_topics.write(wb.create_sheet("Viva_CS_Topics"), viva_cs_topic_metrics or [], viva_cs_copilot_agents or {})
-    sheet_viva_wau.write(wb.create_sheet("Viva_CS_WAU"), viva_cs_weekly_active_users or [], viva_cs_copilot_agents or {})
-    sheet_viva_autonomous.write(wb.create_sheet("Viva_CS_Autonomous"), viva_cs_autonomous_metrics or [], viva_cs_copilot_agents or {})
+    sheet_viva_sessions.write(wb.create_sheet("Viva_CS_Sessions"), viva_reports_cs_session_metrics or [], viva_reports_cs_copilot_agents or {})
+    sheet_viva_topics.write(wb.create_sheet("Viva_CS_Topics"), viva_reports_cs_topic_metrics or [], viva_reports_cs_copilot_agents or {})
+    sheet_viva_wau.write(wb.create_sheet("Viva_CS_WAU"), viva_reports_cs_weekly_active_users or [], viva_reports_cs_copilot_agents or {})
+    sheet_viva_autonomous.write(wb.create_sheet("Viva_CS_Autonomous"), viva_reports_cs_autonomous_metrics or [], viva_reports_cs_copilot_agents or {})
     sheet_az_health.write(wb.create_sheet("AzureMonitor_Health"), health_detail or [])
     sheet_crossref.write(wb.create_sheet("CrossRef_Summary"), crossref_summary or [])
 

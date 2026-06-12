@@ -296,7 +296,7 @@ CREATE INDEX IF NOT EXISTS idx_az_exc_conv  ON az_exceptions(conversation_id);
 
 -- ── Viva / Copilot Studio report tables ───────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS viva_cs_session_metrics (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_session_metrics (
     agent_id               TEXT NOT NULL,
     metric_date            TEXT NOT NULL,
     total_sessions         INTEGER,
@@ -325,7 +325,7 @@ CREATE TABLE IF NOT EXISTS viva_cs_session_metrics (
     PRIMARY KEY (agent_id, metric_date)
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_topic_metrics (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_topic_metrics (
     agent_id           TEXT NOT NULL,
     topic_id           TEXT NOT NULL,
     topic_name         TEXT,
@@ -345,7 +345,7 @@ CREATE TABLE IF NOT EXISTS viva_cs_topic_metrics (
     PRIMARY KEY (agent_id, topic_id, metric_date)
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_knowledge_source_metrics (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_knowledge_source_metrics (
     agent_id                   TEXT NOT NULL,
     source_type                TEXT NOT NULL,
     metric_date                TEXT NOT NULL,
@@ -360,7 +360,7 @@ CREATE TABLE IF NOT EXISTS viva_cs_knowledge_source_metrics (
     PRIMARY KEY (agent_id, source_type, metric_date)
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_autonomous_metrics (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_autonomous_metrics (
     agent_id            TEXT NOT NULL,
     metric_date         TEXT NOT NULL,
     total_runs          INTEGER,
@@ -378,7 +378,7 @@ CREATE TABLE IF NOT EXISTS viva_cs_autonomous_metrics (
     PRIMARY KEY (agent_id, metric_date)
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_autonomous_trigger_metrics (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_autonomous_trigger_metrics (
     agent_id            TEXT NOT NULL,
     trigger_schema_name TEXT NOT NULL,
     metric_date         TEXT NOT NULL,
@@ -397,7 +397,7 @@ CREATE TABLE IF NOT EXISTS viva_cs_autonomous_trigger_metrics (
     PRIMARY KEY (agent_id, trigger_schema_name, metric_date)
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_action_metrics (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_action_metrics (
     agent_id                               TEXT NOT NULL,
     action_schema_name                     TEXT NOT NULL,
     metric_date                            TEXT NOT NULL,
@@ -408,7 +408,7 @@ CREATE TABLE IF NOT EXISTS viva_cs_action_metrics (
     PRIMARY KEY (agent_id, action_schema_name, metric_date)
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_copilot_agents (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_copilot_agents (
     agent_id        TEXT PRIMARY KEY,
     agent_name      TEXT,
     description     TEXT,
@@ -421,14 +421,14 @@ CREATE TABLE IF NOT EXISTS viva_cs_copilot_agents (
     icon            TEXT
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_weekly_active_users (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_weekly_active_users (
     agent_id          TEXT NOT NULL,
     start_date        TEXT NOT NULL,
     active_user_count INTEGER,
     PRIMARY KEY (agent_id, start_date)
 );
 
-CREATE TABLE IF NOT EXISTS viva_cs_extended_metadata (
+CREATE TABLE IF NOT EXISTS viva_reports_cs_extended_metadata (
     agent_id          TEXT PRIMARY KEY,
     aad_tenant_id     TEXT,
     roi_configuration TEXT
@@ -526,10 +526,125 @@ CREATE TABLE IF NOT EXISTS m365_graph_request_usage (
     PRIMARY KEY (snapshot_date, app_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_viva_cs_sess_agent  ON viva_cs_session_metrics(agent_id);
-CREATE INDEX IF NOT EXISTS idx_viva_cs_topic_agent ON viva_cs_topic_metrics(agent_id);
-CREATE INDEX IF NOT EXISTS idx_viva_cs_wau_agent   ON viva_cs_weekly_active_users(agent_id);
-CREATE INDEX IF NOT EXISTS idx_viva_cs_auto_agent  ON viva_cs_autonomous_metrics(agent_id);
+CREATE INDEX IF NOT EXISTS idx_viva_reports_cs_sess_agent  ON viva_reports_cs_session_metrics(agent_id);
+CREATE INDEX IF NOT EXISTS idx_viva_reports_cs_topic_agent ON viva_reports_cs_topic_metrics(agent_id);
+CREATE INDEX IF NOT EXISTS idx_viva_reports_cs_wau_agent   ON viva_reports_cs_weekly_active_users(agent_id);
+CREATE INDEX IF NOT EXISTS idx_viva_reports_cs_auto_agent  ON viva_reports_cs_autonomous_metrics(agent_id);
+
+-- ── Viva Reports — Copilot Adoption (per-user weekly prompt activity) ─────
+
+CREATE TABLE IF NOT EXISTS viva_reports_copilot_adoption (
+    person_id                          TEXT NOT NULL,
+    metric_date                        TEXT NOT NULL,
+    organization                       TEXT,
+    -- Chat prompts
+    chat_work_outlook                  INTEGER,
+    chat_work_teams                    INTEGER,
+    chat_web_teams                     INTEGER,
+    chat_web_outlook                   INTEGER,
+    chat_web_prompts                   INTEGER,
+    chat_work_prompts                  INTEGER,
+    -- App-specific prompts
+    word_work_prompts                  INTEGER,
+    word_web_prompts                   INTEGER,
+    excel_work_prompts                 INTEGER,
+    excel_web_prompts                  INTEGER,
+    ppt_work_prompts                   INTEGER,
+    ppt_web_prompts                    INTEGER,
+    word_chat_prompts                  INTEGER,
+    ppt_chat_prompts                   INTEGER,
+    excel_chat_prompts                 INTEGER,
+    -- Actions
+    intelligent_recap_actions          INTEGER,
+    visualize_table_word               INTEGER,
+    add_content_ppt                    INTEGER,
+    draft_word_doc                     INTEGER,
+    summarize_word_doc                 INTEGER,
+    email_coaching                     INTEGER,
+    generate_email_draft               INTEGER,
+    summarize_email_thread             INTEGER,
+    excel_analysis                     INTEGER,
+    excel_formatting                   INTEGER,
+    create_excel_formula               INTEGER,
+    summarize_meeting_teams            INTEGER,
+    summarize_ppt                      INTEGER,
+    create_ppt                         INTEGER,
+    rewrite_text_word                  INTEGER,
+    summarize_chat_teams               INTEGER,
+    compose_chat_teams                 INTEGER,
+    -- Totals
+    total_copilot_actions              INTEGER,
+    total_copilot_active_days          INTEGER,
+    total_copilot_enabled_days         INTEGER,
+    meeting_hours_summarized           REAL,
+    actions_copilot_chat               INTEGER,
+    actions_excel                      INTEGER,
+    actions_outlook                    INTEGER,
+    actions_powerpoint                 INTEGER,
+    actions_teams                      INTEGER,
+    actions_word                       INTEGER,
+    PRIMARY KEY (person_id, metric_date)
+);
+
+-- ── Viva Reports — Copilot Impact (per-user weekly work patterns + Copilot) ─
+
+CREATE TABLE IF NOT EXISTS viva_reports_copilot_impact (
+    person_id                          TEXT NOT NULL,
+    metric_date                        TEXT NOT NULL,
+    organization                       TEXT,
+    is_active                          INTEGER,
+    weekend_days                       TEXT,
+    -- Copilot actions (same columns as adoption)
+    total_copilot_actions              INTEGER,
+    total_copilot_active_days          INTEGER,
+    total_copilot_enabled_days         INTEGER,
+    intelligent_recap_actions          INTEGER,
+    chat_web_prompts                   INTEGER,
+    meeting_hours_summarized           REAL,
+    meetings_summarized                INTEGER,
+    summarize_meeting_teams            INTEGER,
+    summarize_chat_teams               INTEGER,
+    compose_chat_teams                 INTEGER,
+    chat_conversations_summarized      INTEGER,
+    word_work_prompts                  INTEGER,
+    word_web_prompts                   INTEGER,
+    excel_work_prompts                 INTEGER,
+    excel_web_prompts                  INTEGER,
+    ppt_work_prompts                   INTEGER,
+    ppt_web_prompts                    INTEGER,
+    visualize_table_word               INTEGER,
+    add_content_ppt                    INTEGER,
+    organize_ppt                       INTEGER,
+    chat_work_prompts                  INTEGER,
+    summarize_email_thread             INTEGER,
+    email_coaching                     INTEGER,
+    generate_email_draft               INTEGER,
+    summarize_word_doc                 INTEGER,
+    summarize_ppt                      INTEGER,
+    create_ppt                         INTEGER,
+    rewrite_text_word                  INTEGER,
+    draft_word_doc                     INTEGER,
+    excel_analysis                     INTEGER,
+    create_excel_formula               INTEGER,
+    excel_formatting                   INTEGER,
+    emails_sent_with_copilot           INTEGER,
+    -- Work pattern signals
+    attended_meetings                  REAL,
+    meetings                           REAL,
+    meeting_hours                      REAL,
+    uninterrupted_hours                REAL,
+    small_meeting_hours                REAL,
+    multitasking_hours                 REAL,
+    conflicting_meeting_hours          REAL,
+    chats_sent                         INTEGER,
+    emails_sent                        INTEGER,
+    PRIMARY KEY (person_id, metric_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_viva_adopt_person ON viva_reports_copilot_adoption(person_id);
+CREATE INDEX IF NOT EXISTS idx_viva_adopt_date   ON viva_reports_copilot_adoption(metric_date);
+CREATE INDEX IF NOT EXISTS idx_viva_impact_person ON viva_reports_copilot_impact(person_id);
+CREATE INDEX IF NOT EXISTS idx_viva_impact_date   ON viva_reports_copilot_impact(metric_date);
 
 -- ── Power Platform Analytics API ──────────────────────────────────────────
 
@@ -567,6 +682,73 @@ CREATE TABLE IF NOT EXISTS pp_bot_topic_analytics (
 
 CREATE INDEX IF NOT EXISTS idx_pp_sessions_bot ON pp_bot_sessions(bot_id);
 CREATE INDEX IF NOT EXISTS idx_pp_topic_bot    ON pp_bot_topic_analytics(bot_id);
+
+-- ── M365 Admin — Agent Inventory ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS m365_admin_agent_inventory (
+    title_id                 TEXT PRIMARY KEY,  -- T_xxx identifier; links to m365_usage_* tables
+    name                     TEXT,
+    status                   TEXT,
+    channel                  TEXT,
+    date_created             TEXT,
+    last_modified            TEXT,
+    publisher                TEXT,
+    publisher_type           TEXT,
+    version                  TEXT,
+    owner                    TEXT,
+    description              TEXT,
+    platform                 TEXT,
+    creator_id               TEXT,             -- AAD user GUID
+    environment_id           TEXT,
+    bot_id                   TEXT,             -- Copilot Studio GUID (links to pva_agents.agent_id)
+    custom_actions           INTEGER,
+    custom_action_list       TEXT,
+    sensitivity              TEXT,
+    can_read_od_sp           INTEGER,          -- Can read OneDrive & SharePoint items
+    od_sp_items              TEXT,
+    can_read_od_files        INTEGER,
+    od_files                 TEXT,
+    od_sites                 TEXT,
+    can_read_sp_sites        INTEGER,
+    sp_files                 TEXT,
+    sp_sites                 TEXT,
+    can_extend_graph         INTEGER,
+    graph_connector_details  TEXT,
+    can_generate_images      INTEGER,
+    can_use_code_interpreter INTEGER,
+    contains_uploaded_files  INTEGER,
+    uploaded_files           TEXT,
+    instructions             TEXT,
+    groups_shared            TEXT,
+    users_shared             TEXT
+);
+
+-- ── M365 Usage — Agent Activity (30-day rolling snapshot) ────────────────
+
+CREATE TABLE IF NOT EXISTS m365_usage_agents (
+    agent_id                TEXT PRIMARY KEY,
+    agent_name              TEXT,
+    creator_type            TEXT,
+    active_users_licensed   INTEGER,
+    active_users_unlicensed INTEGER,
+    responses_sent          INTEGER,
+    last_activity_date      TEXT
+);
+
+-- ── M365 Usage — Per-User Agent Activity ─────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS m365_usage_agent_users (
+    agent_id           TEXT NOT NULL,
+    username           TEXT NOT NULL,
+    agent_name         TEXT,
+    creator_type       TEXT,
+    responses_sent     INTEGER,
+    last_activity_date TEXT,
+    PRIMARY KEY (agent_id, username)
+);
+
+CREATE INDEX IF NOT EXISTS idx_m365_admin_inv_bot    ON m365_admin_agent_inventory(bot_id);
+CREATE INDEX IF NOT EXISTS idx_m365_usage_users_user ON m365_usage_agent_users(username);
 """
 
 
@@ -664,22 +846,32 @@ class SqliteStore:
             if col not in call_cols:
                 self._conn.execute(f"ALTER TABLE connector_calls ADD COLUMN {col} {typedef}")
 
-        # Rename viva_* Copilot Studio tables → viva_cs_*
+        # Rename viva_* / viva_cs_* Copilot Studio tables → viva_reports_cs_*
         all_tables = {
             row[0] for row in self._conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
         for old, new in [
-            ("viva_session_metrics",            "viva_cs_session_metrics"),
-            ("viva_topic_metrics",              "viva_cs_topic_metrics"),
-            ("viva_knowledge_source_metrics",   "viva_cs_knowledge_source_metrics"),
-            ("viva_autonomous_trigger_metrics", "viva_cs_autonomous_trigger_metrics"),
-            ("viva_autonomous_metrics",         "viva_cs_autonomous_metrics"),
-            ("viva_action_metrics",             "viva_cs_action_metrics"),
-            ("viva_copilot_agents",             "viva_cs_copilot_agents"),
-            ("viva_weekly_active_users",        "viva_cs_weekly_active_users"),
-            ("viva_extended_metadata",          "viva_cs_extended_metadata"),
+            ("viva_session_metrics",            "viva_reports_cs_session_metrics"),
+            ("viva_topic_metrics",              "viva_reports_cs_topic_metrics"),
+            ("viva_knowledge_source_metrics",   "viva_reports_cs_knowledge_source_metrics"),
+            ("viva_autonomous_trigger_metrics", "viva_reports_cs_autonomous_trigger_metrics"),
+            ("viva_autonomous_metrics",         "viva_reports_cs_autonomous_metrics"),
+            ("viva_action_metrics",             "viva_reports_cs_action_metrics"),
+            ("viva_copilot_agents",             "viva_reports_cs_copilot_agents"),
+            ("viva_weekly_active_users",        "viva_reports_cs_weekly_active_users"),
+            ("viva_extended_metadata",          "viva_reports_cs_extended_metadata"),
+            # viva_cs_* → viva_reports_cs_* (previous naming)
+            ("viva_cs_session_metrics",            "viva_reports_cs_session_metrics"),
+            ("viva_cs_topic_metrics",              "viva_reports_cs_topic_metrics"),
+            ("viva_cs_knowledge_source_metrics",   "viva_reports_cs_knowledge_source_metrics"),
+            ("viva_cs_autonomous_trigger_metrics", "viva_reports_cs_autonomous_trigger_metrics"),
+            ("viva_cs_autonomous_metrics",         "viva_reports_cs_autonomous_metrics"),
+            ("viva_cs_action_metrics",             "viva_reports_cs_action_metrics"),
+            ("viva_cs_copilot_agents",             "viva_reports_cs_copilot_agents"),
+            ("viva_cs_weekly_active_users",        "viva_reports_cs_weekly_active_users"),
+            ("viva_cs_extended_metadata",          "viva_reports_cs_extended_metadata"),
         ]:
             if old not in all_tables:
                 continue
@@ -1338,12 +1530,12 @@ class SqliteStore:
     # Viva / Copilot Studio report tables
     # ------------------------------------------------------------------
 
-    def upsert_viva_cs_session_metrics(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_session_metrics(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_session_metrics VALUES
+                    """INSERT OR REPLACE INTO viva_reports_cs_session_metrics VALUES
                     (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (r['agent_id'], r['metric_date'],
                      r.get('total_sessions'), r.get('resolved_sessions'), r.get('escalated_sessions'),
@@ -1358,18 +1550,18 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_session_metrics(self) -> list[dict]:
+    def fetch_viva_reports_cs_session_metrics(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT * FROM viva_cs_session_metrics ORDER BY metric_date DESC, agent_id"
+            "SELECT * FROM viva_reports_cs_session_metrics ORDER BY metric_date DESC, agent_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def upsert_viva_cs_topic_metrics(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_topic_metrics(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_topic_metrics VALUES
+                    """INSERT OR REPLACE INTO viva_reports_cs_topic_metrics VALUES
                     (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (r['agent_id'], r['topic_id'], r.get('topic_name'), r['metric_date'],
                      r.get('total_sessions'), r.get('resolved_sessions'), r.get('escalated_sessions'),
@@ -1380,18 +1572,18 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_topic_metrics(self) -> list[dict]:
+    def fetch_viva_reports_cs_topic_metrics(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT * FROM viva_cs_topic_metrics ORDER BY metric_date DESC, agent_id, topic_name"
+            "SELECT * FROM viva_reports_cs_topic_metrics ORDER BY metric_date DESC, agent_id, topic_name"
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def upsert_viva_cs_knowledge_source_metrics(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_knowledge_source_metrics(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_knowledge_source_metrics VALUES
+                    """INSERT OR REPLACE INTO viva_reports_cs_knowledge_source_metrics VALUES
                     (?,?,?,?,?,?,?,?,?,?,?)""",
                     (r['agent_id'], r['source_type'], r['metric_date'],
                      r.get('count_total'), r.get('count_unengaged'), r.get('count_engaged'),
@@ -1401,18 +1593,18 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_knowledge_source_metrics(self) -> list[dict]:
+    def fetch_viva_reports_cs_knowledge_source_metrics(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT * FROM viva_cs_knowledge_source_metrics ORDER BY metric_date DESC, agent_id"
+            "SELECT * FROM viva_reports_cs_knowledge_source_metrics ORDER BY metric_date DESC, agent_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def upsert_viva_cs_autonomous_metrics(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_autonomous_metrics(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_autonomous_metrics VALUES
+                    """INSERT OR REPLACE INTO viva_reports_cs_autonomous_metrics VALUES
                     (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (r['agent_id'], r['metric_date'],
                      r.get('total_runs'), r.get('successful_runs'), r.get('failed_runs'),
@@ -1424,18 +1616,18 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_autonomous_metrics(self) -> list[dict]:
+    def fetch_viva_reports_cs_autonomous_metrics(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT * FROM viva_cs_autonomous_metrics ORDER BY metric_date DESC, agent_id"
+            "SELECT * FROM viva_reports_cs_autonomous_metrics ORDER BY metric_date DESC, agent_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def upsert_viva_cs_autonomous_trigger_metrics(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_autonomous_trigger_metrics(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_autonomous_trigger_metrics VALUES
+                    """INSERT OR REPLACE INTO viva_reports_cs_autonomous_trigger_metrics VALUES
                     (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (r['agent_id'], r['trigger_schema_name'], r['metric_date'],
                      r.get('total_runs'), r.get('successful_runs'), r.get('failed_runs'),
@@ -1447,18 +1639,18 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_autonomous_trigger_metrics(self) -> list[dict]:
+    def fetch_viva_reports_cs_autonomous_trigger_metrics(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT * FROM viva_cs_autonomous_trigger_metrics ORDER BY metric_date DESC, agent_id"
+            "SELECT * FROM viva_reports_cs_autonomous_trigger_metrics ORDER BY metric_date DESC, agent_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def upsert_viva_cs_action_metrics(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_action_metrics(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_action_metrics VALUES (?,?,?,?,?,?,?)""",
+                    """INSERT OR REPLACE INTO viva_reports_cs_action_metrics VALUES (?,?,?,?,?,?,?)""",
                     (r['agent_id'], r['action_schema_name'], r['metric_date'],
                      r.get('total_runs'), r.get('successful_actions_in_runs'),
                      r.get('actions_in_successful_runs'), r.get('successful_actions_in_successful_runs')),
@@ -1466,18 +1658,18 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_action_metrics(self) -> list[dict]:
+    def fetch_viva_reports_cs_action_metrics(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT * FROM viva_cs_action_metrics ORDER BY metric_date DESC, agent_id"
+            "SELECT * FROM viva_reports_cs_action_metrics ORDER BY metric_date DESC, agent_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def upsert_viva_cs_copilot_agents(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_copilot_agents(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_copilot_agents VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    """INSERT OR REPLACE INTO viva_reports_cs_copilot_agents VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (r['agent_id'], r.get('agent_name'), r.get('description'), r.get('surface'),
                      r.get('mode'), r.get('categories'), r.get('agent_type'),
                      r.get('is_included', 1), r.get('excluded_reason'), r.get('icon')),
@@ -1485,44 +1677,215 @@ class SqliteStore:
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_copilot_agents(self) -> dict[str, dict]:
+    def fetch_viva_reports_cs_copilot_agents(self) -> dict[str, dict]:
         """Returns {agent_id: row_dict} for O(1) lookup in sheet writers."""
         rows = self._conn.execute(
             "SELECT agent_id, agent_name, description, surface, mode, categories, agent_type, is_included "
-            "FROM viva_cs_copilot_agents"
+            "FROM viva_reports_cs_copilot_agents"
         ).fetchall()
         return {r['agent_id']: dict(r) for r in rows}
 
-    def upsert_viva_cs_weekly_active_users(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_weekly_active_users(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_weekly_active_users VALUES (?,?,?)""",
+                    """INSERT OR REPLACE INTO viva_reports_cs_weekly_active_users VALUES (?,?,?)""",
                     (r['agent_id'], r['start_date'], r.get('active_user_count')),
                 )
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_weekly_active_users(self) -> list[dict]:
+    def fetch_viva_reports_cs_weekly_active_users(self) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT * FROM viva_cs_weekly_active_users ORDER BY start_date DESC, agent_id"
+            "SELECT * FROM viva_reports_cs_weekly_active_users ORDER BY start_date DESC, agent_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def upsert_viva_cs_extended_metadata(self, rows: list[dict]) -> int:
+    def upsert_viva_reports_cs_extended_metadata(self, rows: list[dict]) -> int:
         written = 0
         with self._conn:
             for r in rows:
                 cur = self._conn.execute(
-                    """INSERT OR REPLACE INTO viva_cs_extended_metadata VALUES (?,?,?)""",
+                    """INSERT OR REPLACE INTO viva_reports_cs_extended_metadata VALUES (?,?,?)""",
                     (r['agent_id'], r.get('aad_tenant_id'), r.get('roi_configuration')),
                 )
                 written += cur.rowcount
         return written
 
-    def fetch_viva_cs_extended_metadata(self) -> list[dict]:
-        rows = self._conn.execute("SELECT * FROM viva_cs_extended_metadata").fetchall()
+    def fetch_viva_reports_cs_extended_metadata(self) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM viva_reports_cs_extended_metadata").fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Viva Reports — Copilot Adoption & Impact
+    # ------------------------------------------------------------------
+
+    def upsert_viva_reports_copilot_adoption(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO viva_reports_copilot_adoption VALUES
+                    (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        r['person_id'], r['metric_date'], r.get('organization'),
+                        r.get('chat_work_outlook'), r.get('chat_work_teams'),
+                        r.get('chat_web_teams'), r.get('chat_web_outlook'),
+                        r.get('chat_web_prompts'), r.get('chat_work_prompts'),
+                        r.get('word_work_prompts'), r.get('word_web_prompts'),
+                        r.get('excel_work_prompts'), r.get('excel_web_prompts'),
+                        r.get('ppt_work_prompts'), r.get('ppt_web_prompts'),
+                        r.get('word_chat_prompts'), r.get('ppt_chat_prompts'),
+                        r.get('excel_chat_prompts'),
+                        r.get('intelligent_recap_actions'), r.get('visualize_table_word'),
+                        r.get('add_content_ppt'), r.get('draft_word_doc'),
+                        r.get('summarize_word_doc'), r.get('email_coaching'),
+                        r.get('generate_email_draft'), r.get('summarize_email_thread'),
+                        r.get('excel_analysis'), r.get('excel_formatting'),
+                        r.get('create_excel_formula'), r.get('summarize_meeting_teams'),
+                        r.get('summarize_ppt'), r.get('create_ppt'),
+                        r.get('rewrite_text_word'), r.get('summarize_chat_teams'),
+                        r.get('compose_chat_teams'),
+                        r.get('total_copilot_actions'), r.get('total_copilot_active_days'),
+                        r.get('total_copilot_enabled_days'), r.get('meeting_hours_summarized'),
+                        r.get('actions_copilot_chat'), r.get('actions_excel'),
+                        r.get('actions_outlook'), r.get('actions_powerpoint'),
+                        r.get('actions_teams'), r.get('actions_word'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_viva_reports_copilot_adoption(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM viva_reports_copilot_adoption ORDER BY metric_date DESC, person_id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_viva_reports_copilot_impact(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO viva_reports_copilot_impact VALUES
+                    (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        r['person_id'], r['metric_date'], r.get('organization'),
+                        r.get('is_active'), r.get('weekend_days'),
+                        r.get('total_copilot_actions'), r.get('total_copilot_active_days'),
+                        r.get('total_copilot_enabled_days'), r.get('intelligent_recap_actions'),
+                        r.get('chat_web_prompts'), r.get('meeting_hours_summarized'),
+                        r.get('meetings_summarized'), r.get('summarize_meeting_teams'),
+                        r.get('summarize_chat_teams'), r.get('compose_chat_teams'),
+                        r.get('chat_conversations_summarized'),
+                        r.get('word_work_prompts'), r.get('word_web_prompts'),
+                        r.get('excel_work_prompts'), r.get('excel_web_prompts'),
+                        r.get('ppt_work_prompts'), r.get('ppt_web_prompts'),
+                        r.get('visualize_table_word'), r.get('add_content_ppt'),
+                        r.get('organize_ppt'), r.get('chat_work_prompts'),
+                        r.get('summarize_email_thread'), r.get('email_coaching'),
+                        r.get('generate_email_draft'), r.get('summarize_word_doc'),
+                        r.get('summarize_ppt'), r.get('create_ppt'),
+                        r.get('rewrite_text_word'), r.get('draft_word_doc'),
+                        r.get('excel_analysis'), r.get('create_excel_formula'),
+                        r.get('excel_formatting'), r.get('emails_sent_with_copilot'),
+                        r.get('attended_meetings'), r.get('meetings'),
+                        r.get('meeting_hours'), r.get('uninterrupted_hours'),
+                        r.get('small_meeting_hours'), r.get('multitasking_hours'),
+                        r.get('conflicting_meeting_hours'),
+                        r.get('chats_sent'), r.get('emails_sent'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_viva_reports_copilot_impact(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM viva_reports_copilot_impact ORDER BY metric_date DESC, person_id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # M365 Admin — Agent Inventory
+    # ------------------------------------------------------------------
+
+    def upsert_m365_admin_agent_inventory(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO m365_admin_agent_inventory VALUES
+                    (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        r.get('title_id'), r.get('name'), r.get('status'), r.get('channel'),
+                        r.get('date_created'), r.get('last_modified'), r.get('publisher'),
+                        r.get('publisher_type'), r.get('version'), r.get('owner'),
+                        r.get('description'), r.get('platform'), r.get('creator_id'),
+                        r.get('environment_id'), r.get('bot_id'), r.get('custom_actions'),
+                        r.get('custom_action_list'), r.get('sensitivity'),
+                        r.get('can_read_od_sp'), r.get('od_sp_items'),
+                        r.get('can_read_od_files'), r.get('od_files'), r.get('od_sites'),
+                        r.get('can_read_sp_sites'), r.get('sp_files'), r.get('sp_sites'),
+                        r.get('can_extend_graph'), r.get('graph_connector_details'),
+                        r.get('can_generate_images'), r.get('can_use_code_interpreter'),
+                        r.get('contains_uploaded_files'), r.get('uploaded_files'),
+                        r.get('instructions'), r.get('groups_shared'), r.get('users_shared'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_m365_admin_agent_inventory(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM m365_admin_agent_inventory ORDER BY name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # M365 Usage — Agent Activity + Per-User Activity
+    # ------------------------------------------------------------------
+
+    def upsert_m365_usage_agents(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO m365_usage_agents VALUES (?,?,?,?,?,?,?)""",
+                    (
+                        r.get('agent_id'), r.get('agent_name'), r.get('creator_type'),
+                        r.get('active_users_licensed'), r.get('active_users_unlicensed'),
+                        r.get('responses_sent'), r.get('last_activity_date'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_m365_usage_agents(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM m365_usage_agents ORDER BY responses_sent DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_m365_usage_agent_users(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO m365_usage_agent_users VALUES (?,?,?,?,?,?)""",
+                    (
+                        r.get('agent_id'), r.get('username'), r.get('agent_name'),
+                        r.get('creator_type'), r.get('responses_sent'),
+                        r.get('last_activity_date'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_m365_usage_agent_users(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM m365_usage_agent_users ORDER BY agent_id, responses_sent DESC"
+        ).fetchall()
         return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------

@@ -26,15 +26,17 @@ def cmd_import_viva(report_dir: str) -> None:
 
     print(f"Importing Viva reports from: {report_dir}")
     for label, fetch_fn, upsert_fn in [
-        ("session metrics",          importer.fetch_session_metrics,           store.upsert_viva_cs_session_metrics),
-        ("topic metrics",            importer.fetch_topic_metrics,             store.upsert_viva_cs_topic_metrics),
-        ("knowledge source metrics", importer.fetch_knowledge_source_metrics,  store.upsert_viva_cs_knowledge_source_metrics),
-        ("autonomous metrics",       importer.fetch_autonomous_metrics,        store.upsert_viva_cs_autonomous_metrics),
-        ("autonomous trigger metrics", importer.fetch_autonomous_trigger_metrics, store.upsert_viva_cs_autonomous_trigger_metrics),
-        ("action metrics",           importer.fetch_action_metrics,            store.upsert_viva_cs_action_metrics),
-        ("copilot agents",           importer.fetch_copilot_agents,            store.upsert_viva_cs_copilot_agents),
-        ("weekly active users",      importer.fetch_weekly_active_users,       store.upsert_viva_cs_weekly_active_users),
-        ("extended metadata",        importer.fetch_extended_metadata,         store.upsert_viva_cs_extended_metadata),
+        ("session metrics",          importer.fetch_session_metrics,           store.upsert_viva_reports_cs_session_metrics),
+        ("topic metrics",            importer.fetch_topic_metrics,             store.upsert_viva_reports_cs_topic_metrics),
+        ("knowledge source metrics", importer.fetch_knowledge_source_metrics,  store.upsert_viva_reports_cs_knowledge_source_metrics),
+        ("autonomous metrics",       importer.fetch_autonomous_metrics,        store.upsert_viva_reports_cs_autonomous_metrics),
+        ("autonomous trigger metrics", importer.fetch_autonomous_trigger_metrics, store.upsert_viva_reports_cs_autonomous_trigger_metrics),
+        ("action metrics",           importer.fetch_action_metrics,            store.upsert_viva_reports_cs_action_metrics),
+        ("copilot agents",           importer.fetch_copilot_agents,            store.upsert_viva_reports_cs_copilot_agents),
+        ("weekly active users",      importer.fetch_weekly_active_users,       store.upsert_viva_reports_cs_weekly_active_users),
+        ("extended metadata",        importer.fetch_extended_metadata,         store.upsert_viva_reports_cs_extended_metadata),
+        ("copilot adoption",         lambda: importer.fetch_copilot_adoption(settings.viva_report_adoption),  store.upsert_viva_reports_copilot_adoption),
+        ("copilot impact",           lambda: importer.fetch_copilot_impact(settings.viva_report_impact),       store.upsert_viva_reports_copilot_impact),
     ]:
         try:
             items = fetch_fn()
@@ -374,20 +376,22 @@ def cmd_sync() -> str:
                 print(f"  WARNING: secure score failed: {e}")
 
     # ── Viva CS auto-import ───────────────────────────────────────────────────
-    if settings.viva_cs_report_dir:
-        print(f"\n[Viva CS] importing from {settings.viva_cs_report_dir}")
+    if settings.viva_reports_cs_report_dir:
+        print(f"\n[Viva CS] importing from {settings.viva_reports_cs_report_dir}")
         from src.fetchers.viva_report import VivaReportImporter
-        importer = VivaReportImporter(settings.viva_cs_report_dir)
+        importer = VivaReportImporter(settings.viva_reports_cs_report_dir)
         for label, fetch_fn, upsert_fn in [
-            ("session metrics",            importer.fetch_session_metrics,             store.upsert_viva_cs_session_metrics),
-            ("topic metrics",              importer.fetch_topic_metrics,               store.upsert_viva_cs_topic_metrics),
-            ("knowledge source metrics",   importer.fetch_knowledge_source_metrics,    store.upsert_viva_cs_knowledge_source_metrics),
-            ("autonomous metrics",         importer.fetch_autonomous_metrics,          store.upsert_viva_cs_autonomous_metrics),
-            ("autonomous trigger metrics", importer.fetch_autonomous_trigger_metrics,  store.upsert_viva_cs_autonomous_trigger_metrics),
-            ("action metrics",             importer.fetch_action_metrics,              store.upsert_viva_cs_action_metrics),
-            ("copilot agents",             importer.fetch_copilot_agents,              store.upsert_viva_cs_copilot_agents),
-            ("weekly active users",        importer.fetch_weekly_active_users,         store.upsert_viva_cs_weekly_active_users),
-            ("extended metadata",          importer.fetch_extended_metadata,           store.upsert_viva_cs_extended_metadata),
+            ("session metrics",            importer.fetch_session_metrics,             store.upsert_viva_reports_cs_session_metrics),
+            ("topic metrics",              importer.fetch_topic_metrics,               store.upsert_viva_reports_cs_topic_metrics),
+            ("knowledge source metrics",   importer.fetch_knowledge_source_metrics,    store.upsert_viva_reports_cs_knowledge_source_metrics),
+            ("autonomous metrics",         importer.fetch_autonomous_metrics,          store.upsert_viva_reports_cs_autonomous_metrics),
+            ("autonomous trigger metrics", importer.fetch_autonomous_trigger_metrics,  store.upsert_viva_reports_cs_autonomous_trigger_metrics),
+            ("action metrics",             importer.fetch_action_metrics,              store.upsert_viva_reports_cs_action_metrics),
+            ("copilot agents",             importer.fetch_copilot_agents,              store.upsert_viva_reports_cs_copilot_agents),
+            ("weekly active users",        importer.fetch_weekly_active_users,         store.upsert_viva_reports_cs_weekly_active_users),
+            ("extended metadata",          importer.fetch_extended_metadata,           store.upsert_viva_reports_cs_extended_metadata),
+            ("copilot adoption",           lambda: importer.fetch_copilot_adoption(settings.viva_report_adoption),  store.upsert_viva_reports_copilot_adoption),
+            ("copilot impact",             lambda: importer.fetch_copilot_impact(settings.viva_report_impact),       store.upsert_viva_reports_copilot_impact),
         ]:
             try:
                 items = fetch_fn()
@@ -396,6 +400,34 @@ def cmd_sync() -> str:
                     print(f"  {label}: {len(items)} rows, {written} written")
                 else:
                     print(f"  {label}: file not found, skipped")
+            except Exception as e:
+                print(f"  WARNING: {label} failed: {e}")
+
+    # ── M365 Admin / Usage auto-import ───────────────────────────────────────
+    if any([
+        settings.m365_admin_agent_inventory,
+        settings.m365_usage_report_agents,
+        settings.m365_usage_report_agent_users,
+    ]):
+        print("\n[M365 Admin/Usage] importing CSV reports")
+        from src.fetchers.m365_admin_report import M365AdminReportImporter
+        m365 = M365AdminReportImporter(
+            inventory_path=settings.m365_admin_agent_inventory,
+            agents_path=settings.m365_usage_report_agents,
+            agent_users_path=settings.m365_usage_report_agent_users,
+        )
+        for label, fetch_fn, upsert_fn in [
+            ("agent inventory",   m365.fetch_agent_inventory,   store.upsert_m365_admin_agent_inventory),
+            ("usage agents",      m365.fetch_usage_agents,       store.upsert_m365_usage_agents),
+            ("usage agent users", m365.fetch_usage_agent_users,  store.upsert_m365_usage_agent_users),
+        ]:
+            try:
+                items = fetch_fn()
+                if items:
+                    written = upsert_fn(items)
+                    print(f"  {label}: {len(items)} rows, {written} written")
+                else:
+                    print(f"  {label}: file not found or not configured, skipped")
             except Exception as e:
                 print(f"  WARNING: {label} failed: {e}")
 
@@ -442,11 +474,11 @@ def cmd_export(run_id: str) -> None:
     copilot_usage           = store.fetch_copilot_usage()
     teams_usage             = store.fetch_teams_usage()
     viva_person_insights       = store.fetch_viva_person_insights()
-    viva_cs_session_metrics       = store.fetch_viva_cs_session_metrics()
-    viva_cs_topic_metrics         = store.fetch_viva_cs_topic_metrics()
-    viva_cs_weekly_active_users   = store.fetch_viva_cs_weekly_active_users()
-    viva_cs_autonomous_metrics    = store.fetch_viva_cs_autonomous_metrics()
-    viva_cs_copilot_agents        = store.fetch_viva_cs_copilot_agents()
+    viva_reports_cs_session_metrics       = store.fetch_viva_reports_cs_session_metrics()
+    viva_reports_cs_topic_metrics         = store.fetch_viva_reports_cs_topic_metrics()
+    viva_reports_cs_weekly_active_users   = store.fetch_viva_reports_cs_weekly_active_users()
+    viva_reports_cs_autonomous_metrics    = store.fetch_viva_reports_cs_autonomous_metrics()
+    viva_reports_cs_copilot_agents        = store.fetch_viva_reports_cs_copilot_agents()
     copilot_count_summary         = store.fetch_copilot_count_summary()
     copilot_count_trend           = store.fetch_copilot_count_trend()
     copilot_packages              = store.fetch_copilot_packages()
@@ -469,10 +501,10 @@ def cmd_export(run_id: str) -> None:
           f"{len(agent_solutions)} agent-solution links")
     print(f"  {len(model_calls)} AI model calls")
     print(f"  {len(viva_person_insights)} Viva person insight rows")
-    print(f"  {len(viva_cs_session_metrics)} Viva session metric rows, "
-          f"{len(viva_cs_topic_metrics)} topic rows, "
-          f"{len(viva_cs_weekly_active_users)} WAU rows, "
-          f"{len(viva_cs_autonomous_metrics)} autonomous rows")
+    print(f"  {len(viva_reports_cs_session_metrics)} Viva session metric rows, "
+          f"{len(viva_reports_cs_topic_metrics)} topic rows, "
+          f"{len(viva_reports_cs_weekly_active_users)} WAU rows, "
+          f"{len(viva_reports_cs_autonomous_metrics)} autonomous rows")
     print(f"  {len(health_detail)} health rows, {len(crossref_summary)} flagged conversations")
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -488,11 +520,11 @@ def cmd_export(run_id: str) -> None:
         copilot_usage=copilot_usage, teams_usage=teams_usage,
         kpi_snapshots=kpi_snapshots,
         viva_person_insights=viva_person_insights,
-        viva_cs_session_metrics=viva_cs_session_metrics,
-        viva_cs_topic_metrics=viva_cs_topic_metrics,
-        viva_cs_weekly_active_users=viva_cs_weekly_active_users,
-        viva_cs_autonomous_metrics=viva_cs_autonomous_metrics,
-        viva_cs_copilot_agents=viva_cs_copilot_agents,
+        viva_reports_cs_session_metrics=viva_reports_cs_session_metrics,
+        viva_reports_cs_topic_metrics=viva_reports_cs_topic_metrics,
+        viva_reports_cs_weekly_active_users=viva_reports_cs_weekly_active_users,
+        viva_reports_cs_autonomous_metrics=viva_reports_cs_autonomous_metrics,
+        viva_reports_cs_copilot_agents=viva_reports_cs_copilot_agents,
         copilot_count_summary=copilot_count_summary,
         copilot_count_trend=copilot_count_trend,
         copilot_packages=copilot_packages,
