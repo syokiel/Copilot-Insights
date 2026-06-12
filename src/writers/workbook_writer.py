@@ -12,15 +12,20 @@ from src.writers import (
     sheet_environments,
     sheet_invocations,
     sheet_kpi_history,
+    sheet_m365_admin_inventory,
     sheet_m365_copilot,
     sheet_m365_copilot_trend,
     sheet_m365_packages,
     sheet_m365_o365_users,
     sheet_m365_app_users,
+    sheet_m365_usage_agents,
+    sheet_m365_usage_agent_users,
     sheet_publishers,
     sheet_summary,
     sheet_teams_usage,
     sheet_viva,
+    sheet_viva_adoption,
+    sheet_viva_impact,
     sheet_viva_sessions,
     sheet_viva_topics,
     sheet_viva_wau,
@@ -55,6 +60,11 @@ def build_workbook(
     copilot_packages: list[dict] | None = None,
     o365_active_users: list[dict] | None = None,
     m365_app_users: list[dict] | None = None,
+    viva_reports_copilot_adoption: list[dict] | None = None,
+    viva_reports_copilot_impact: list[dict] | None = None,
+    m365_admin_agent_inventory: list[dict] | None = None,
+    m365_usage_agents: list[dict] | None = None,
+    m365_usage_agent_users: list[dict] | None = None,
 ) -> None:
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -88,6 +98,11 @@ def build_workbook(
     sheet_viva_topics.write(wb.create_sheet("Viva_CS_Topics"), viva_reports_cs_topic_metrics or [], viva_reports_cs_copilot_agents or {})
     sheet_viva_wau.write(wb.create_sheet("Viva_CS_WAU"), viva_reports_cs_weekly_active_users or [], viva_reports_cs_copilot_agents or {})
     sheet_viva_autonomous.write(wb.create_sheet("Viva_CS_Autonomous"), viva_reports_cs_autonomous_metrics or [], viva_reports_cs_copilot_agents or {})
+    sheet_viva_adoption.write(wb.create_sheet("Viva_Copilot_Adoption"), viva_reports_copilot_adoption or [])
+    sheet_viva_impact.write(wb.create_sheet("Viva_Copilot_Impact"), viva_reports_copilot_impact or [])
+    sheet_m365_admin_inventory.write(wb.create_sheet("M365_Agent_Inventory"), m365_admin_agent_inventory or [])
+    sheet_m365_usage_agents.write(wb.create_sheet("M365_Usage_Agents"), m365_usage_agents or [])
+    sheet_m365_usage_agent_users.write(wb.create_sheet("M365_Usage_AgentUsers"), m365_usage_agent_users or [])
     sheet_az_health.write(wb.create_sheet("AzureMonitor_Health"), health_detail or [])
     sheet_crossref.write(wb.create_sheet("CrossRef_Summary"), crossref_summary or [])
 
