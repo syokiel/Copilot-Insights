@@ -155,6 +155,25 @@ Fall back to `pva_agents.display_name` if the agent is absent from `viva_reports
   `agent_name`, `creator_type`, `responses_sent`, `last_activity_date`.
   Use for "who is using which agent?" or to find the most active users of a specific agent.
 
+**Tokenomics — Copilot Credit Consumption (Power Platform Admin)**
+- `tokenomics_capacity_consumption` → daily per-resource (flow/agent) capacity consumption from
+  the PP Admin Center "Capacity Consumption Tenant Details" export. Key columns: `environment_id`,
+  `environment_name`, `resource_id`, `resource_name` (flow/agent name), `resource_type`
+  (`PowerVirtualAgents`/`PowerAutomate`/`Bot`/`AIFlow`), `product_name` (`Copilot Studio`/`Power Automate`),
+  `feature_name` (e.g. "Generative answer", "Classic answer", "Text and generative AI tools (premium)"),
+  `channel_id` (`Teams`/`SharePoint`/`DirectLine`/`Autonomous`/`M365 Copilot`/blank), `is_billable`,
+  `unit` (always `Messages`), `consumption_date`, `consumed_quantity`.
+  Primary source for "which flows/agents are burning the most Copilot credits, and on what feature?"
+  No reliable natural key — the same resource can recur on one date under a renamed `resource_name`,
+  so rows are deduped by a synthetic hash, not by resource/date alone.
+- `tokenomics_entitlement_consumption` → per-environment, per-billing-period entitlement vs. consumption
+  from the "Entitlement Consumption Tenant Details" export. Key columns: `billing_plan_id`,
+  `billing_plan_name`, `environment_id`, `environment_name`, `capacity_type` (e.g. `MCSMessages`),
+  `entitled_quantity`, `prepaid_consumed_quantity`, `payg_consumed_quantity`, `usage_date`.
+  Use for "how much of our prepaid Copilot message capacity has each environment consumed, and is it
+  spilling into pay-as-you-go?" Join to `tokenomics_capacity_consumption` and `m365_admin_agent_inventory`
+  on `environment_id` to break tenant-wide entitlement usage down by individual flow/agent.
+
 ## Key join patterns
 
 ```sql
@@ -204,6 +223,33 @@ SELECT i.name AS admin_name, p.display_name AS pva_name, i.owner,
 FROM m365_admin_agent_inventory i
 LEFT JOIN pva_agents p ON p.agent_id = i.bot_id
 ORDER BY i.name
+```
+
+**Tokenomics join patterns**
+
+```sql
+-- Top credit-consuming resources (flows/agents) by feature:
+SELECT environment_name, resource_name, product_name, feature_name,
+       SUM(consumed_quantity) AS total_consumed
+FROM tokenomics_capacity_consumption
+GROUP BY environment_id, resource_id, feature_name
+ORDER BY total_consumed DESC
+
+-- Entitlement utilisation per environment (prepaid burn-down + overflow into PAYG):
+SELECT environment_name, capacity_type,
+       SUM(entitled_quantity)         AS entitled,
+       SUM(prepaid_consumed_quantity) AS prepaid_used,
+       SUM(payg_consumed_quantity)    AS payg_used
+FROM tokenomics_entitlement_consumption
+GROUP BY environment_id, capacity_type
+ORDER BY payg_used DESC
+
+-- Credit consumption attributed to a known M365 agent (via environment_id):
+SELECT i.name, c.resource_name, c.feature_name, SUM(c.consumed_quantity) AS total
+FROM tokenomics_capacity_consumption c
+JOIN m365_admin_agent_inventory i ON i.environment_id = c.environment_id AND i.bot_id = c.resource_id
+GROUP BY c.resource_id, c.feature_name
+ORDER BY total DESC
 ```
 
 ## Tone

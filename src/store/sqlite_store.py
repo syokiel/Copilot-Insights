@@ -749,6 +749,43 @@ CREATE TABLE IF NOT EXISTS m365_usage_agent_users (
 
 CREATE INDEX IF NOT EXISTS idx_m365_admin_inv_bot    ON m365_admin_agent_inventory(bot_id);
 CREATE INDEX IF NOT EXISTS idx_m365_usage_users_user ON m365_usage_agent_users(username);
+
+-- ── Tokenomics — Copilot Credit Consumption (Power Platform Admin) ───────
+
+CREATE TABLE IF NOT EXISTS tokenomics_capacity_consumption (
+    row_id            TEXT PRIMARY KEY,  -- synthetic hash; natural key isn't unique (see fetcher)
+    tenant_id         TEXT,
+    environment_id    TEXT,
+    environment_name  TEXT,
+    environment_type  TEXT,
+    resource_id       TEXT,
+    resource_name     TEXT,
+    resource_type     TEXT,
+    product_name      TEXT,
+    feature_name      TEXT,
+    channel_id        TEXT,
+    is_billable       INTEGER,
+    unit              TEXT,
+    consumption_date  TEXT,
+    consumed_quantity REAL
+);
+
+CREATE TABLE IF NOT EXISTS tokenomics_entitlement_consumption (
+    billing_plan_id           TEXT NOT NULL,
+    billing_plan_name         TEXT,
+    environment_id            TEXT NOT NULL,
+    environment_name          TEXT,
+    capacity_type             TEXT NOT NULL,
+    entitled_quantity         REAL,
+    prepaid_consumed_quantity REAL,
+    payg_consumed_quantity    REAL,
+    usage_date                TEXT NOT NULL,
+    PRIMARY KEY (billing_plan_id, environment_id, capacity_type, usage_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tokenomics_capacity_env    ON tokenomics_capacity_consumption(environment_id);
+CREATE INDEX IF NOT EXISTS idx_tokenomics_capacity_date   ON tokenomics_capacity_consumption(consumption_date);
+CREATE INDEX IF NOT EXISTS idx_tokenomics_entitlement_env ON tokenomics_entitlement_consumption(environment_id);
 """
 
 
@@ -774,6 +811,17 @@ def dep_row_id(r: dict) -> str:
 
 def exc_row_id(r: dict) -> str:
     key = f"{r.get('OperationId')}|{r.get('ConversationId')}|{r.get('ExceptionType')}|{r.get('Timestamp')}"
+    return hashlib.sha1(key.encode()).hexdigest()
+
+
+def _capacity_consumption_row_id(r: dict) -> str:
+    # Natural key (environment/resource/feature/channel/billable/date) isn't fully
+    # unique — the same resource can appear twice on one date under a renamed
+    # ResourceName, so fold that in too.
+    key = (
+        f"{r.get('environment_id')}|{r.get('resource_id')}|{r.get('resource_name')}|"
+        f"{r.get('feature_name')}|{r.get('channel_id')}|{r.get('is_billable')}|{r.get('consumption_date')}"
+    )
     return hashlib.sha1(key.encode()).hexdigest()
 
 
@@ -1885,6 +1933,57 @@ class SqliteStore:
     def fetch_m365_usage_agent_users(self) -> list[dict]:
         rows = self._conn.execute(
             "SELECT * FROM m365_usage_agent_users ORDER BY agent_id, responses_sent DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Tokenomics — Copilot Credit Consumption (Power Platform Admin)
+    # ------------------------------------------------------------------
+
+    def upsert_tokenomics_capacity_consumption(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO tokenomics_capacity_consumption VALUES
+                    (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        _capacity_consumption_row_id(r), r.get('tenant_id'), r.get('environment_id'),
+                        r.get('environment_name'), r.get('environment_type'), r.get('resource_id'),
+                        r.get('resource_name'), r.get('resource_type'), r.get('product_name'),
+                        r.get('feature_name'), r.get('channel_id'), r.get('is_billable'),
+                        r.get('unit'), r.get('consumption_date'), r.get('consumed_quantity'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_tokenomics_capacity_consumption(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM tokenomics_capacity_consumption ORDER BY consumption_date DESC, environment_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_tokenomics_entitlement_consumption(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO tokenomics_entitlement_consumption VALUES
+                    (?,?,?,?,?,?,?,?,?)""",
+                    (
+                        r.get('billing_plan_id'), r.get('billing_plan_name'), r.get('environment_id'),
+                        r.get('environment_name'), r.get('capacity_type'), r.get('entitled_quantity'),
+                        r.get('prepaid_consumed_quantity'), r.get('payg_consumed_quantity'),
+                        r.get('usage_date'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_tokenomics_entitlement_consumption(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM tokenomics_entitlement_consumption ORDER BY usage_date DESC, environment_name"
         ).fetchall()
         return [dict(r) for r in rows]
 

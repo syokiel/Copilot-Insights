@@ -431,6 +431,31 @@ def cmd_sync() -> str:
             except Exception as e:
                 print(f"  WARNING: {label} failed: {e}")
 
+    # ── Tokenomics (PP Admin capacity/entitlement consumption) auto-import ──
+    if any([
+        settings.ppadmin_capacity_consumption,
+        settings.ppadmin_entitlement_consumption,
+    ]):
+        print("\n[Tokenomics] importing PP Admin consumption CSV reports")
+        from src.fetchers.ppadmin_consumption import PPAdminConsumptionImporter
+        ppadmin = PPAdminConsumptionImporter(
+            capacity_path=settings.ppadmin_capacity_consumption,
+            entitlement_path=settings.ppadmin_entitlement_consumption,
+        )
+        for label, fetch_fn, upsert_fn in [
+            ("capacity consumption",    ppadmin.fetch_capacity_consumption,    store.upsert_tokenomics_capacity_consumption),
+            ("entitlement consumption", ppadmin.fetch_entitlement_consumption, store.upsert_tokenomics_entitlement_consumption),
+        ]:
+            try:
+                items = fetch_fn()
+                if items:
+                    written = upsert_fn(items)
+                    print(f"  {label}: {len(items)} rows, {written} written")
+                else:
+                    print(f"  {label}: file not found or not configured, skipped")
+            except Exception as e:
+                print(f"  WARNING: {label} failed: {e}")
+
     # ── KPI snapshot ─────────────────────────────────────────────────────────
     print("\n[KPI Snapshot]")
     try:
@@ -490,6 +515,8 @@ def cmd_export(run_id: str) -> None:
     m365_usage_agents                   = store.fetch_m365_usage_agents()
     m365_usage_agent_users              = store.fetch_m365_usage_agent_users()
     viva_reports_cs_action_metrics      = store.fetch_viva_reports_cs_action_metrics()
+    tokenomics_capacity_consumption     = store.fetch_tokenomics_capacity_consumption()
+    tokenomics_entitlement_consumption  = store.fetch_tokenomics_entitlement_consumption()
     store.close()
 
     health_detail, crossref_summary = build_crossref(
@@ -512,6 +539,8 @@ def cmd_export(run_id: str) -> None:
           f"{len(viva_reports_cs_weekly_active_users)} WAU rows, "
           f"{len(viva_reports_cs_autonomous_metrics)} autonomous rows")
     print(f"  {len(health_detail)} health rows, {len(crossref_summary)} flagged conversations")
+    print(f"  {len(tokenomics_capacity_consumption)} Tokenomics capacity rows, "
+          f"{len(tokenomics_entitlement_consumption)} entitlement rows")
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     p  = Path(settings.output_path)
@@ -542,6 +571,8 @@ def cmd_export(run_id: str) -> None:
         m365_usage_agents=m365_usage_agents,
         m365_usage_agent_users=m365_usage_agent_users,
         viva_reports_cs_action_metrics=viva_reports_cs_action_metrics,
+        tokenomics_capacity_consumption=tokenomics_capacity_consumption,
+        tokenomics_entitlement_consumption=tokenomics_entitlement_consumption,
     )
 
 

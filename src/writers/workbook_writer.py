@@ -23,6 +23,8 @@ from src.writers import (
     sheet_publishers,
     sheet_summary,
     sheet_teams_usage,
+    sheet_tokenomics_capacity,
+    sheet_tokenomics_entitlement,
     sheet_viva,
     sheet_viva_adoption,
     sheet_viva_impact,
@@ -67,6 +69,8 @@ def build_workbook(
     m365_usage_agents: list[dict] | None = None,
     m365_usage_agent_users: list[dict] | None = None,
     viva_reports_cs_action_metrics: list[dict] | None = None,
+    tokenomics_capacity_consumption: list[dict] | None = None,
+    tokenomics_entitlement_consumption: list[dict] | None = None,
 ) -> None:
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -131,6 +135,8 @@ def build_workbook(
     _if("M365_Agent_Inventory",  sheet_m365_admin_inventory.write, m365_admin_agent_inventory or [])
     _if("M365_Usage_Agents",     sheet_m365_usage_agents.write,    m365_usage_agents or [])
     _if("M365_Usage_AgentUsers", sheet_m365_usage_agent_users.write, m365_usage_agent_users or [])
+    _if("Tokenomics_Capacity",    sheet_tokenomics_capacity.write,    tokenomics_capacity_consumption or [])
+    _if("Tokenomics_Entitlement", sheet_tokenomics_entitlement.write, tokenomics_entitlement_consumption or [])
     _if("AzureMonitor_Health",   sheet_az_health.write,            health_detail or [])
     _if("CrossRef_Summary",      sheet_crossref.write,             crossref_summary or [])
 

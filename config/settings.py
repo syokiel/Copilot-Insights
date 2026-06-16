@@ -72,6 +72,9 @@ class Settings:
     # M365 Usage reports
     m365_usage_report_agents: str = ""
     m365_usage_report_agent_users: str = ""
+    # Power Platform Admin Center — Copilot credit consumption CSV exports (Tokenomics_* tables)
+    ppadmin_capacity_consumption: str = ""
+    ppadmin_entitlement_consumption: str = ""
     # MCP server (HTTP deployment)
     mcp_tenant_id: str = ""
     mcp_app_id_uri: str = ""
@@ -123,6 +126,12 @@ class Settings:
         self.m365_usage_report_agent_users = (
             os.getenv("M365USAGE_REPORT_AgentUser") or
             os.getenv("M365Usage_REPORT_AgentUser", self.m365_usage_report_agent_users)
+        ).strip()
+        self.ppadmin_capacity_consumption = os.getenv(
+            "PPADMIN_CAPACITY_CONSUMPTION", self.ppadmin_capacity_consumption
+        ).strip()
+        self.ppadmin_entitlement_consumption = os.getenv(
+            "PPADMIN_ENTITLEMENT_CONSUMPTION", self.ppadmin_entitlement_consumption
         ).strip()
         self.mcp_tenant_id = os.getenv("MCP_TENANT_ID", self.mcp_tenant_id)
         self.mcp_app_id_uri = os.getenv("MCP_APP_ID_URI", self.mcp_app_id_uri)
