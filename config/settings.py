@@ -67,6 +67,8 @@ class Settings:
     # Direct file paths for Copilot Adoption and Impact reports.
     viva_report_adoption: str = ""
     viva_report_impact: str = ""
+    # Agent → Journey → Persona mapping (static CSV seed for XLA experience model)
+    agent_journey_map: str = ""
     # M365 Admin Center CSV exports
     m365_admin_agent_inventory: str = ""
     # M365 Usage reports
@@ -121,6 +123,7 @@ class Settings:
         ).strip()
         self.viva_report_adoption = os.getenv("VIVA_REPORT_ADOPTION", self.viva_report_adoption).strip()
         self.viva_report_impact   = os.getenv("VIVA_REPORT_IMPACT",   self.viva_report_impact).strip()
+        self.agent_journey_map = os.getenv("AGENT_JOURNEY_MAP", self.agent_journey_map).strip()
         self.m365_admin_agent_inventory   = os.getenv("M365ADMIN_AGENT_INVENTORY",   self.m365_admin_agent_inventory).strip()
         self.m365_usage_report_agents     = (
             os.getenv("M365ADMIN_USAGE_REPORT_AGENTS") or

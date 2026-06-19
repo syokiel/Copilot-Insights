@@ -288,6 +288,35 @@ FROM m365_usage_users
 ORDER BY agent_responses_received DESC
 ```
 
+**Experience Model — Agent → Persona → Journey → XLA**
+- `dim_agent_journey_persona` → static mapping of each agent to a journey and persona type.
+  Key columns: `agent_id`, `agent_name`, `journey_name` (Get Help / Complete Task / Find Info / Automate Work),
+  `persona_type` (end_user / it_support / hr / knowledge_worker / operations).
+  Seeded from `imports/agent_journey_persona_map.csv` via `AGENT_JOURNEY_MAP` env var.
+  Join this to any `viva_reports_cs_*` table on `agent_id` to add persona/journey context.
+
+XLA scoring is pre-computed by the store and exposed via the `XLA_Persona_Journey` and
+`XLA_Agent_Contribution` Excel sheets. For custom analysis use `run_sql` with:
+
+```sql
+-- XLA summary by persona + journey (completion-weighted score):
+SELECT m.persona_type, m.journey_name,
+       COUNT(DISTINCT s.agent_id) AS agents,
+       SUM(s.total_sessions)      AS sessions,
+       ROUND(SUM(s.resolved_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS completion_pct,
+       ROUND(SUM(s.escalated_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS escalation_pct
+FROM viva_reports_cs_session_metrics s
+JOIN dim_agent_journey_persona m ON m.agent_id = s.agent_id
+GROUP BY m.persona_type, m.journey_name
+ORDER BY sessions DESC
+
+-- Which agents serve a given persona (e.g. end_user)?
+SELECT DISTINCT m.agent_name, m.journey_name
+FROM dim_agent_journey_persona m
+WHERE m.persona_type = 'end_user'
+ORDER BY m.journey_name, m.agent_name
+```
+
 ## Tone
 Professional and direct. No filler phrases. If data is missing or a table is empty,
 say so explicitly and explain what permission or sync is needed to populate it.

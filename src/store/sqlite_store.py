@@ -750,6 +750,19 @@ CREATE TABLE IF NOT EXISTS m365_usage_agent_users (
 CREATE INDEX IF NOT EXISTS idx_m365_admin_inv_bot    ON m365_admin_agent_inventory(bot_id);
 CREATE INDEX IF NOT EXISTS idx_m365_usage_users_user ON m365_usage_agent_users(username);
 
+-- ── Experience Model — Agent → Journey → Persona dimension ─────────────
+
+CREATE TABLE IF NOT EXISTS dim_agent_journey_persona (
+    agent_id     TEXT    NOT NULL,
+    journey_name TEXT    NOT NULL,
+    persona_type TEXT    NOT NULL,
+    agent_name   TEXT,
+    PRIMARY KEY (agent_id, journey_name, persona_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dim_ajp_journey ON dim_agent_journey_persona(journey_name);
+CREATE INDEX IF NOT EXISTS idx_dim_ajp_persona ON dim_agent_journey_persona(persona_type);
+
 -- ── M365 Usage — Per-User Agent Activity Rollup ──────────────────────────
 
 CREATE TABLE IF NOT EXISTS m365_usage_users (
@@ -2035,6 +2048,78 @@ class SqliteStore:
         rows = self._conn.execute(
             "SELECT * FROM tokenomics_entitlement_consumption ORDER BY usage_date DESC, environment_name"
         ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Experience Model — dim_agent_journey_persona + XLA scoring
+    # ------------------------------------------------------------------
+
+    def upsert_dim_agent_journey_persona(self, rows: list[dict]) -> int:
+        written = 0
+        with self._conn:
+            for r in rows:
+                cur = self._conn.execute(
+                    """INSERT OR REPLACE INTO dim_agent_journey_persona VALUES (?,?,?,?)""",
+                    (
+                        r.get('agent_id'), r.get('journey_name'),
+                        r.get('persona_type'), r.get('agent_name'),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def fetch_dim_agent_journey_persona(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM dim_agent_journey_persona ORDER BY persona_type, journey_name, agent_name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def fetch_xla_by_persona_journey(self) -> list[dict]:
+        """Aggregate session metrics grouped by persona + journey via the mapping dimension."""
+        rows = self._conn.execute("""
+            SELECT
+                m.persona_type,
+                m.journey_name,
+                COUNT(DISTINCT s.agent_id)                                           AS agent_count,
+                SUM(s.total_sessions)                                                AS total_sessions,
+                SUM(s.resolved_sessions)                                             AS resolved_sessions,
+                SUM(s.escalated_sessions)                                            AS escalated_sessions,
+                SUM(s.abandoned_sessions)                                            AS abandoned_sessions,
+                SUM(s.engaged_sessions)                                              AS engaged_sessions,
+                ROUND(SUM(s.resolved_sessions)  * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS completion_rate_pct,
+                ROUND(SUM(s.escalated_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS escalation_rate_pct,
+                ROUND(SUM(s.abandoned_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS abandonment_rate_pct,
+                ROUND(
+                    (
+                        COALESCE(SUM(s.resolved_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 0) * 0.6 +
+                        (100.0 - COALESCE(SUM(s.escalated_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 0)) * 0.2 +
+                        (100.0 - COALESCE(SUM(s.abandoned_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 0)) * 0.2
+                    ), 1
+                )                                                                    AS xla_score
+            FROM viva_reports_cs_session_metrics s
+            JOIN dim_agent_journey_persona m ON m.agent_id = s.agent_id
+            GROUP BY m.persona_type, m.journey_name
+            ORDER BY m.persona_type, m.journey_name
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+    def fetch_agent_contribution_by_persona_journey(self) -> list[dict]:
+        """Per-agent breakdown: which personas/journeys each agent serves and its session outcomes."""
+        rows = self._conn.execute("""
+            SELECT
+                COALESCE(a.agent_name, m.agent_name, s.agent_id)  AS agent_name,
+                m.persona_type,
+                m.journey_name,
+                SUM(s.total_sessions)                              AS total_sessions,
+                ROUND(SUM(s.resolved_sessions)  * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS completion_rate_pct,
+                ROUND(SUM(s.escalated_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS escalation_rate_pct,
+                ROUND(SUM(s.abandoned_sessions) * 100.0 / NULLIF(SUM(s.total_sessions), 0), 1) AS abandonment_rate_pct
+            FROM viva_reports_cs_session_metrics s
+            JOIN dim_agent_journey_persona m ON m.agent_id = s.agent_id
+            LEFT JOIN viva_reports_cs_copilot_agents a ON a.agent_id = s.agent_id
+            GROUP BY s.agent_id, m.persona_type, m.journey_name
+            ORDER BY total_sessions DESC
+        """).fetchall()
         return [dict(r) for r in rows]
 
     def upsert_m365_usage_users(self, rows: list[dict]) -> int:

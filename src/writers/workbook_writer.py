@@ -36,6 +36,8 @@ from src.writers import (
     sheet_viva_wau,
     sheet_viva_autonomous,
     sheet_xla,
+    sheet_xla_persona_journey,
+    sheet_xla_agent_contribution,
 )
 
 
@@ -77,6 +79,8 @@ def build_workbook(
     tokenomics_entitlement_consumption: list[dict] | None = None,
     tokenomics_entitlement_per_agent: list[dict] | None = None,
     tokenomics_entitlement_per_user: list[dict] | None = None,
+    xla_by_persona_journey: list[dict] | None = None,
+    xla_agent_contribution: list[dict] | None = None,
 ) -> None:
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
@@ -146,6 +150,8 @@ def build_workbook(
     _if("Tokenomics_Entitlement", sheet_tokenomics_entitlement.write, tokenomics_entitlement_consumption or [])
     _if("Tokenomics_PerAgent",    sheet_tokenomics_entitlement_per_agent.write, tokenomics_entitlement_per_agent or [])
     _if("Tokenomics_PerUser",     sheet_tokenomics_entitlement_per_user.write,  tokenomics_entitlement_per_user or [])
+    _if("XLA_Persona_Journey",    sheet_xla_persona_journey.write,    xla_by_persona_journey or [])
+    _if("XLA_Agent_Contribution", sheet_xla_agent_contribution.write, xla_agent_contribution or [])
     _if("AzureMonitor_Health",   sheet_az_health.write,            health_detail or [])
     _if("CrossRef_Summary",      sheet_crossref.write,             crossref_summary or [])
 

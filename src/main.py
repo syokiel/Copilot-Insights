@@ -375,6 +375,17 @@ def cmd_sync() -> str:
             except Exception as e:
                 print(f"  WARNING: secure score failed: {e}")
 
+    # ── Agent → Journey → Persona mapping (experience model) ─────────────────
+    if settings.agent_journey_map:
+        print(f"\n[Experience Model] importing agent journey/persona map from {settings.agent_journey_map}")
+        from src.fetchers.journey_map_importer import JourneyMapImporter
+        mapping = JourneyMapImporter(settings.agent_journey_map).fetch_mapping()
+        if mapping:
+            written = store.upsert_dim_agent_journey_persona(mapping)
+            print(f"  {len(mapping)} rows, {written} written")
+        else:
+            print("  file not found or empty, skipped")
+
     # ── Viva CS auto-import ───────────────────────────────────────────────────
     if settings.viva_reports_cs_report_dir:
         print(f"\n[Viva CS] importing from {settings.viva_reports_cs_report_dir}")
@@ -529,6 +540,8 @@ def cmd_export(run_id: str) -> None:
     tokenomics_entitlement_consumption  = store.fetch_tokenomics_entitlement_consumption()
     tokenomics_entitlement_per_agent    = store.fetch_tokenomics_entitlement_per_agent()
     tokenomics_entitlement_per_user     = store.fetch_tokenomics_entitlement_per_user()
+    xla_by_persona_journey              = store.fetch_xla_by_persona_journey()
+    xla_agent_contribution              = store.fetch_agent_contribution_by_persona_journey()
     store.close()
 
     health_detail, crossref_summary = build_crossref(
@@ -556,6 +569,7 @@ def cmd_export(run_id: str) -> None:
           f"{len(tokenomics_entitlement_per_agent)} per-agent rows, "
           f"{len(tokenomics_entitlement_per_user)} per-user rows")
     print(f"  {len(m365_usage_users)} M365 usage user rows")
+    print(f"  {len(xla_by_persona_journey)} XLA persona/journey rows, {len(xla_agent_contribution)} agent contribution rows")
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     p  = Path(settings.output_path)
@@ -591,6 +605,8 @@ def cmd_export(run_id: str) -> None:
         tokenomics_entitlement_consumption=tokenomics_entitlement_consumption,
         tokenomics_entitlement_per_agent=tokenomics_entitlement_per_agent,
         tokenomics_entitlement_per_user=tokenomics_entitlement_per_user,
+        xla_by_persona_journey=xla_by_persona_journey,
+        xla_agent_contribution=xla_agent_contribution,
     )
 
 
