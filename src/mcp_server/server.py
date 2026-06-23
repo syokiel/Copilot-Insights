@@ -316,66 +316,63 @@ async def read_resource(uri: str) -> ReadResourceResult:
 async def list_tools() -> ListToolsResult:
     return ListToolsResult(tools=[
         Tool(
-            name="get_summary_stats",
-            description="High-level statistics: total conversations, events, connector calls, date range, top connectors, production vs design-mode breakdown.",
+            name="get_kpi_snapshot",
+            description="Pre-aggregated KPI summary (conversations, active users, connector health, token usage). Call this first for overview questions.",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         Tool(
-            name="get_conversations",
-            description="List conversations with per-conversation stats. Optionally filter by channel_id or design_mode.",
+            name="get_summary_stats",
+            description="Counts: total/production conversations, events, connector calls, top-5 connectors, date range.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        Tool(
+            name="get_agent_activity",
+            description="Per-agent conversation counts (total/production/test) and last activity.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "channel_id": {"type": "string", "description": "e.g. 'msteams', 'pva-studio', 'webchat'"},
-                    "design_mode": {"type": "boolean", "description": "True = test only, False = production only"},
-                    "limit": {"type": "integer", "default": 50},
+                    "design_mode": {"type": "boolean", "description": "true=test, false=production, omit=both"},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="get_conversations",
+            description="List conversations with message counts and topics. Filter by channel or design_mode.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "channel_id": {"type": "string"},
+                    "design_mode": {"type": "boolean"},
+                    "limit": {"type": "integer", "default": 25, "maximum": 50},
                 },
                 "required": [],
             },
         ),
         Tool(
             name="get_conversation_detail",
-            description="Full event timeline for a single conversation: every message, topic, and connector call in order.",
+            description="Event timeline for one conversation. Requires conversation_id from get_conversations.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "conversation_id": {"type": "string"},
-                },
+                "properties": {"conversation_id": {"type": "string"}},
                 "required": ["conversation_id"],
             },
         ),
         Tool(
-            name="get_connector_calls",
-            description="List connector calls with timing and success info. Filter by connector name, action, success, or design_mode.",
+            name="get_user_activity",
+            description="Per-user conversation and message counts, channels, and last activity.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "connector_name": {"type": "string", "description": "e.g. 'Microsoft Teams'"},
-                    "action_target": {"type": "string", "description": "e.g. 'shared_teams/GetAllTeams'"},
-                    "success": {"type": "boolean"},
                     "design_mode": {"type": "boolean"},
-                    "limit": {"type": "integer", "default": 50},
-                },
-                "required": [],
-            },
-        ),
-        Tool(
-            name="get_user_prompts",
-            description="List user prompts (messages sent to agents). Supports keyword search, conversation filter, and design_mode filter.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "search": {"type": "string", "description": "Keyword to search within prompt text (case-insensitive)"},
-                    "conversation_id": {"type": "string", "description": "Return prompts from a single conversation"},
-                    "design_mode": {"type": "boolean", "description": "True = test traffic only, False = production only"},
-                    "limit": {"type": "integer", "default": 50},
+                    "limit": {"type": "integer", "default": 25, "maximum": 50},
                 },
                 "required": [],
             },
         ),
         Tool(
             name="get_top_connectors",
-            description="Connectors ranked by usage count with success/failure breakdown and average latency.",
+            description="Connectors ranked by call count with success rate and avg latency.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -386,72 +383,76 @@ async def list_tools() -> ListToolsResult:
             },
         ),
         Tool(
+            name="get_connector_calls",
+            description="Raw connector call log. Filter by connector name, action, or success.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "connector_name": {"type": "string"},
+                    "action_target": {"type": "string"},
+                    "success": {"type": "boolean"},
+                    "design_mode": {"type": "boolean"},
+                    "limit": {"type": "integer", "default": 25, "maximum": 50},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="get_user_prompts",
+            description="User messages sent to agents. Supports keyword search and conversation filter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {"type": "string"},
+                    "conversation_id": {"type": "string"},
+                    "design_mode": {"type": "boolean"},
+                    "limit": {"type": "integer", "default": 25, "maximum": 50},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="search_by_user",
-            description="All conversations and connector calls for a specific Azure AD object ID.",
+            description="Conversations and connector calls for a specific Azure AD user_id.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "user_id": {"type": "string"},
-                    "limit": {"type": "integer", "default": 50},
+                    "limit": {"type": "integer", "default": 25, "maximum": 50},
                 },
                 "required": ["user_id"],
             },
         ),
         Tool(
-            name="run_sql",
-            description="Execute a read-only SELECT query for custom analysis not covered by other tools.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
             name="get_agents",
-            description="List all Copilot Studio agents with display name, environment, solution, and publish status.",
+            description="Copilot Studio agents with environment and solution info.",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         Tool(
             name="get_environments",
-            description="List Power Platform environments with their agents and applicable DLP policies.",
+            description="Power Platform environments with agent list and DLP policies.",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         Tool(
             name="get_viva_insights",
-            description="Per-user Viva Insights weekly summary: focus, meeting, email, chat, and after-hours. Joined with conversation activity where possible.",
+            description="Per-user Viva Insights weekly hours (focus, meetings, chat, email). Filter by user_id or week_start.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_id":     {"type": "string", "description": "Filter to a single Azure AD user ID"},
-                    "week_start":  {"type": "string", "description": "ISO date e.g. 2026-05-19 — return data for this week only"},
-                    "limit":       {"type": "integer", "default": 50},
+                    "user_id":    {"type": "string"},
+                    "week_start": {"type": "string", "description": "ISO date e.g. 2026-05-19"},
+                    "limit":      {"type": "integer", "default": 25, "maximum": 50},
                 },
                 "required": [],
             },
         ),
         Tool(
-            name="get_agent_activity",
-            description="Per-agent conversation breakdown: total, production, and test conversation counts with last activity timestamp. Joins telemetry to the agent registry via topic name prefix.",
+            name="run_sql",
+            description="Read-only SELECT query for custom analysis. Results capped at 50 rows.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "design_mode": {"type": "boolean", "description": "True = test only, False = production only, omit for both"},
-                },
-                "required": [],
-            },
-        ),
-        Tool(
-            name="get_user_activity",
-            description="Per-user conversation summary: conversation count, message count, channels used, agents interacted with, and last activity. Note: user_id is an Azure AD object ID.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "design_mode": {"type": "boolean", "description": "True = test only, False = production only, omit for both"},
-                    "limit": {"type": "integer", "default": 50},
-                },
-                "required": [],
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
             },
         ),
     ])
@@ -461,27 +462,35 @@ async def list_tools() -> ListToolsResult:
 async def call_tool(name: str, arguments: dict) -> CallToolResult:
     try:
         result = _dispatch(name, arguments)
-        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, indent=2, default=str))])
+        return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, separators=(",", ":"), default=str))])
     except Exception as e:
         return CallToolResult(content=[TextContent(type="text", text=f"Error: {e}")], isError=True)
+
+
+_MAX_ROWS = 50  # hard ceiling for all list-returning tools
+
+
+def _cap_limit(args: dict, default: int = 25) -> int:
+    return min(int(args.get("limit", default)), _MAX_ROWS)
 
 
 def _dispatch(name: str, args: dict) -> object:
     conn = _db()
     try:
-        if name == "get_summary_stats":     return _get_summary_stats(conn)
-        if name == "get_conversations":     return _get_conversations(conn, args)
+        if name == "get_kpi_snapshot":        return _get_kpi_snapshot(conn)
+        if name == "get_summary_stats":       return _get_summary_stats(conn)
+        if name == "get_conversations":       return _get_conversations(conn, args)
         if name == "get_conversation_detail": return _get_conversation_detail(conn, args["conversation_id"])
-        if name == "get_user_prompts":      return _get_user_prompts(conn, args)
-        if name == "get_connector_calls":   return _get_connector_calls(conn, args)
-        if name == "get_top_connectors":    return _get_top_connectors(conn, args)
-        if name == "search_by_user":        return _search_by_user(conn, args)
-        if name == "run_sql":               return _run_sql(conn, args["query"])
-        if name == "get_agents":            return _get_agents(conn)
-        if name == "get_environments":      return _get_environments(conn)
-        if name == "get_viva_insights":      return _get_viva_insights(conn, args)
-        if name == "get_agent_activity":    return _get_agent_activity(conn, args)
-        if name == "get_user_activity":     return _get_user_activity(conn, args)
+        if name == "get_user_prompts":        return _get_user_prompts(conn, args)
+        if name == "get_connector_calls":     return _get_connector_calls(conn, args)
+        if name == "get_top_connectors":      return _get_top_connectors(conn, args)
+        if name == "search_by_user":          return _search_by_user(conn, args)
+        if name == "run_sql":                 return _run_sql(conn, args["query"])
+        if name == "get_agents":              return _get_agents(conn)
+        if name == "get_environments":        return _get_environments(conn)
+        if name == "get_viva_insights":       return _get_viva_insights(conn, args)
+        if name == "get_agent_activity":      return _get_agent_activity(conn, args)
+        if name == "get_user_activity":       return _get_user_activity(conn, args)
         raise ValueError(f"Unknown tool: {name}")
     finally:
         conn.close()
@@ -490,6 +499,24 @@ def _dispatch(name: str, args: dict) -> object:
 # ---------------------------------------------------------------------------
 # Tool implementations
 # ---------------------------------------------------------------------------
+
+def _get_kpi_snapshot(conn: sqlite3.Connection) -> dict:
+    """Return the most recent pre-aggregated KPI snapshot, falling back to live counts."""
+    row = conn.execute("""
+        SELECT snapshot_date, lookback_days,
+               total_licenses, enabled_users, active_users,
+               activation_rate, adoption_rate, power_users,
+               total_prompts, avg_prompts_per_user,
+               total_agents, active_agents, utilization_rate,
+               production_agents, non_prod_agents,
+               total_conversations, agent_adopters, agent_adoption_pct
+        FROM kpi_snapshots ORDER BY snapshot_date DESC LIMIT 1
+    """).fetchone()
+    if row:
+        return dict(row)
+    # Fallback to live aggregation if no snapshot exists
+    return _get_summary_stats(conn)
+
 
 def _get_summary_stats(conn: sqlite3.Connection) -> dict:
     stats = {}
@@ -509,7 +536,7 @@ def _get_summary_stats(conn: sqlite3.Connection) -> dict:
 
 
 def _get_conversations(conn: sqlite3.Connection, args: dict) -> list[dict]:
-    limit = int(args.get("limit", 50))
+    limit = _cap_limit(args)
     filters, params = [], []
     if "channel_id" in args:
         filters.append("e.channel_id = ?"); params.append(args["channel_id"])
@@ -518,15 +545,13 @@ def _get_conversations(conn: sqlite3.Connection, args: dict) -> list[dict]:
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
     return _rows(conn, f"""
         SELECT e.conversation_id,
-               MIN(e.session_id) AS session_id,
                MIN(e.user_id) AS user_id,
-               MIN(e.channel_id) AS channel_id,
-               MAX(e.design_mode) AS design_mode,
+               MIN(e.channel_id) AS channel,
                MIN(e.timestamp) AS first_event,
                MAX(e.timestamp) AS last_event,
-               SUM(CASE WHEN e.event_name='BotMessageReceived' THEN 1 ELSE 0 END) AS messages_received,
-               SUM(CASE WHEN e.event_name='BotMessageSend' THEN 1 ELSE 0 END) AS messages_sent,
-               GROUP_CONCAT(DISTINCT NULLIF(e.topic_name,'')) AS topics,
+               SUM(CASE WHEN e.event_name='BotMessageReceived' THEN 1 ELSE 0 END) AS recv,
+               SUM(CASE WHEN e.event_name='BotMessageSend' THEN 1 ELSE 0 END) AS sent,
+               substr(GROUP_CONCAT(DISTINCT NULLIF(e.topic_name,'')), 1, 150) AS topics,
                COUNT(DISTINCT c.row_id) AS connector_calls
         FROM conversation_events e
         LEFT JOIN connector_calls c ON c.conversation_id = e.conversation_id
@@ -538,13 +563,13 @@ def _get_conversations(conn: sqlite3.Connection, args: dict) -> list[dict]:
 def _get_conversation_detail(conn: sqlite3.Connection, conversation_id: str) -> dict:
     return {
         "conversation_id": conversation_id,
-        "events": _rows(conn, "SELECT timestamp, event_name, topic_name, text FROM conversation_events WHERE conversation_id=? ORDER BY timestamp", (conversation_id,)),
-        "connector_calls": _rows(conn, "SELECT timestamp, connector_name, action_target, success, result_code, duration_ms FROM connector_calls WHERE conversation_id=? ORDER BY timestamp", (conversation_id,)),
+        "events": _rows(conn, "SELECT timestamp, event_name, topic_name, substr(text,1,200) AS text FROM conversation_events WHERE conversation_id=? ORDER BY timestamp LIMIT 50", (conversation_id,)),
+        "connector_calls": _rows(conn, "SELECT timestamp, connector_name, action_target, success, result_code, ROUND(duration_ms) AS ms FROM connector_calls WHERE conversation_id=? ORDER BY timestamp LIMIT 30", (conversation_id,)),
     }
 
 
 def _get_user_prompts(conn: sqlite3.Connection, args: dict) -> list[dict]:
-    limit = int(args.get("limit", 50))
+    limit = _cap_limit(args)
     filters = ["event_name = 'BotMessageReceived'", "text != ''", "text IS NOT NULL"]
     params: list = []
     if "search" in args:
@@ -558,7 +583,8 @@ def _get_user_prompts(conn: sqlite3.Connection, args: dict) -> list[dict]:
         params.append(1 if args["design_mode"] else 0)
     where = f"WHERE {' AND '.join(filters)}"
     return _rows(conn, f"""
-        SELECT timestamp, conversation_id, user_id, channel_id, design_mode, text
+        SELECT timestamp, conversation_id, user_id,
+               substr(text, 1, 200) AS text
         FROM conversation_events
         {where}
         ORDER BY timestamp DESC LIMIT ?
@@ -566,18 +592,18 @@ def _get_user_prompts(conn: sqlite3.Connection, args: dict) -> list[dict]:
 
 
 def _get_connector_calls(conn: sqlite3.Connection, args: dict) -> list[dict]:
-    limit = int(args.get("limit", 50))
+    limit = _cap_limit(args)
     filters, params = [], []
     if "connector_name" in args: filters.append("connector_name=?"); params.append(args["connector_name"])
     if "action_target" in args: filters.append("action_target LIKE ?"); params.append(f"%{args['action_target']}%")
     if "success" in args: filters.append("success=?"); params.append(1 if args["success"] else 0)
     if "design_mode" in args: filters.append("design_mode=?"); params.append(1 if args["design_mode"] else 0)
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
-    return _rows(conn, f"SELECT timestamp, connector_name, action_target, conversation_id, user_id, channel_id, design_mode, success, result_code, duration_ms FROM connector_calls {where} ORDER BY timestamp DESC LIMIT ?", (*params, limit))
+    return _rows(conn, f"SELECT timestamp, connector_name, action_target, conversation_id, success, result_code, ROUND(duration_ms) AS ms FROM connector_calls {where} ORDER BY timestamp DESC LIMIT ?", (*params, limit))
 
 
 def _get_top_connectors(conn: sqlite3.Connection, args: dict) -> list[dict]:
-    limit = int(args.get("limit", 10))
+    limit = _cap_limit(args, default=10)
     filters, params = [], []
     if "design_mode" in args: filters.append("design_mode=?"); params.append(1 if args["design_mode"] else 0)
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
@@ -593,7 +619,7 @@ def _get_top_connectors(conn: sqlite3.Connection, args: dict) -> list[dict]:
 
 
 def _search_by_user(conn: sqlite3.Connection, args: dict) -> dict:
-    uid, limit = args["user_id"], int(args.get("limit", 50))
+    uid, limit = args["user_id"], _cap_limit(args)
     return {
         "user_id": uid,
         "conversations": _rows(conn, "SELECT DISTINCT conversation_id, channel_id, design_mode, MIN(timestamp) AS first_seen FROM conversation_events WHERE user_id=? GROUP BY conversation_id ORDER BY first_seen DESC LIMIT ?", (uid, limit)),
@@ -604,7 +630,9 @@ def _search_by_user(conn: sqlite3.Connection, args: dict) -> dict:
 def _run_sql(conn: sqlite3.Connection, query: str) -> list[dict]:
     if not query.strip().upper().startswith("SELECT"):
         raise ValueError("Only SELECT statements are allowed.")
-    return _rows(conn, query)
+    # Wrap in a subquery to enforce a hard row cap without modifying the caller's SQL
+    capped = f"SELECT * FROM ({query}) _q LIMIT {_MAX_ROWS}"
+    return _rows(conn, capped)
 
 
 def _get_agents(conn: sqlite3.Connection) -> list[dict]:
@@ -612,18 +640,9 @@ def _get_agents(conn: sqlite3.Connection) -> list[dict]:
         SELECT
             b.agent_id,
             b.display_name,
-            b.environment_id,
-            e.display_name   AS environment_name,
-            e.type           AS environment_type,
-            b.created_at,
-            b.modified_at,
+            e.display_name   AS environment,
             b.published_at,
-            b.created_by,
-            b.owner_id,
-            b.created_in,
             s.solution_name,
-            s.solution_unique,
-            s.version        AS solution_version,
             s.is_managed
         FROM pva_agents b
         LEFT JOIN pva_environments e ON e.environment_id = b.environment_id
@@ -638,7 +657,13 @@ def _get_environments(conn: sqlite3.Connection) -> list[dict]:
     for r in _rows(conn, "SELECT environment_id, display_name FROM pva_agents"):
         agents_by_env.setdefault(r["environment_id"], []).append(r["display_name"])
 
-    dlp_all = _rows(conn, "SELECT display_name, environment_type, blocked_connectors, business_connectors, non_business_connectors FROM pva_dlp_policies")
+    dlp_all = _rows(conn, """
+        SELECT display_name, environment_type,
+               substr(blocked_connectors,     1, 300) AS blocked_connectors,
+               substr(business_connectors,    1, 300) AS business_connectors,
+               substr(non_business_connectors,1, 300) AS non_business_connectors
+        FROM pva_dlp_policies
+    """)
     policies_all_envs = [p for p in dlp_all if p["environment_type"] == "AllEnvironments"]
 
     result = []
@@ -660,7 +685,7 @@ def _get_viva_insights(conn: sqlite3.Connection, args: dict) -> list[dict]:
     if "week_start" in args:
         filters.append("v.week_start = ?"); params.append(args["week_start"])
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
-    limit = int(args.get("limit", 50))
+    limit = _cap_limit(args)
 
     return _rows(conn, f"""
         SELECT
@@ -714,7 +739,7 @@ def _get_agent_activity(conn: sqlite3.Connection, args: dict) -> list[dict]:
 
 
 def _get_user_activity(conn: sqlite3.Connection, args: dict) -> list[dict]:
-    limit = int(args.get("limit", 50))
+    limit = _cap_limit(args)
     filters = ["user_id IS NOT NULL", "user_id != ''"]
     params: list = []
     if "design_mode" in args:
@@ -727,12 +752,12 @@ def _get_user_activity(conn: sqlite3.Connection, args: dict) -> list[dict]:
             e.user_id,
             COUNT(DISTINCT e.conversation_id)   AS total_conversations,
             SUM(CASE WHEN e.event_name = 'BotMessageReceived' THEN 1 ELSE 0 END) AS messages_sent,
-            GROUP_CONCAT(DISTINCT e.channel_id) AS channels,
-            GROUP_CONCAT(DISTINCT
+            substr(GROUP_CONCAT(DISTINCT e.channel_id), 1, 100) AS channels,
+            substr(GROUP_CONCAT(DISTINCT
                 CASE WHEN e.topic_name LIKE '%.topic.%'
                 THEN substr(e.topic_name, 1, instr(e.topic_name, '.topic.') - 1)
                 END
-            )                                   AS agents_interacted,
+            ), 1, 200)                          AS agents_interacted,
             MIN(e.timestamp)                    AS first_seen,
             MAX(e.timestamp)                    AS last_activity
         FROM conversation_events e
